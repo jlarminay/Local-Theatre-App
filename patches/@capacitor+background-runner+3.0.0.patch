@@ -1,0 +1,25 @@
+diff --git a/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notification.kt b/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notification.kt
+index 406e572..24c7441
+--- a/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notification.kt
++++ b/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notification.kt
+@@ -36,6 +36,8 @@ class Notification(jsonObject: JSONObject) {
+         ongoing = jsonObject.optBoolean("ongoing", false)
+         autoCancel = jsonObject.optBoolean("autoCancel", false)
+         actionTypeId = jsonObject.optString("actionTypeId", null)
++        largeBody = jsonObject.optString("largeBody", null)
++        summaryText = jsonObject.optString("summaryText", null)
+ 
+         val scheduleDateString = jsonObject.optString("scheduleAt", "")
+         if (scheduleDateString.isNotEmpty()) {
+diff --git a/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notifications.kt b/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notifications.kt
+index 9eb28f3..436a2db
+--- a/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notifications.kt
++++ b/node_modules/@capacitor/background-runner/android/src/main/java/io/ionic/backgroundrunner/plugin/api/Notifications.kt
+@@ -118,6 +118,7 @@ class Notifications(context: Context) : NotificationsAPI {
+                 val style = NotificationCompat.BigTextStyle()
+                 style.bigText(largeBody)
+                 style.setSummaryText(it.summaryText)
++                builder.setStyle(style)
+             }
+ 
+             scheduleNotification(builder.build(), it)

@@ -1,0 +1,181 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'DM Sans', sans-serif;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+
+  /* Dark only. #121212 matches the launcher icon background. */
+  --color-ink: #ececec;
+  --color-paper: #121212;
+  --color-card: #1c1c1c;
+  /* The magenta from the theatre's logo. */
+  --color-accent: #e6177f;
+  --color-error: #ff6b5e;
+  --color-live: #4cc38a;
+
+  --color-muted-1: #9a9a9a;
+  --color-muted-2: #c4c4c4;
+  --color-border-1: #2a2a2a;
+  --color-border-2: #3d3d3d;
+  --color-imgbg: #262626;
+}
+
+:root {
+  color: var(--color-ink);
+  background: var(--color-paper);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  color-scheme: dark;
+}
+body {
+  margin: 0;
+}
+
+/* Clearance above Android's navigation bar. Capacitor exposes the inset as
+   env() on newer WebViews and as --safe-area-inset-bottom (insetsHandling:
+   'css') on older ones, so take whichever is set, plus a little room. */
+.pb-safe {
+  padding-bottom: calc(max(env(safe-area-inset-bottom), var(--safe-area-inset-bottom, 0px)) + 16px);
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  p {
+    margin-top: 0;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────
+   Short and soft: things slide a few px while fading, never far. Leaves are
+   quicker than enters so the new view arrives promptly. */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Route + tab changes (mode="out-in"). push/pop = into a film and back;
+   tab-next/tab-prev = moving right/left along the tab bar. */
+.push-enter-active,
+.pop-enter-active,
+.tab-next-enter-active,
+.tab-prev-enter-active {
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+}
+.push-leave-active,
+.pop-leave-active,
+.tab-next-leave-active,
+.tab-prev-leave-active {
+  transition:
+    opacity 120ms var(--ease-in),
+    transform 120ms var(--ease-in);
+}
+.push-enter-from,
+.pop-enter-from,
+.tab-next-enter-from,
+.tab-prev-enter-from,
+.push-leave-to,
+.pop-leave-to,
+.tab-next-leave-to,
+.tab-prev-leave-to {
+  opacity: 0;
+}
+.push-enter-from,
+.tab-next-enter-from {
+  transform: translateX(24px);
+}
+.pop-enter-from,
+.tab-prev-enter-from {
+  transform: translateX(-24px);
+}
+/* Pages only fade on leave: a transform would turn the film page's fixed
+   Back/Save bar into an absolutely positioned one mid-animation. */
+.tab-next-leave-to {
+  transform: translateX(-10px);
+}
+.tab-prev-leave-to {
+  transform: translateX(10px);
+}
+
+/* Poster grid: removed posters fade out while the rest glide into place. */
+.poster-move {
+  transition: transform 280ms var(--ease-out);
+}
+.poster-enter-active {
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+}
+.poster-leave-active {
+  transition:
+    opacity 160ms var(--ease-in),
+    transform 160ms var(--ease-in);
+}
+.poster-enter-from,
+.poster-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+/* Images fade in once loaded instead of popping in. */
+.fade-img {
+  opacity: 0;
+  transition: opacity 300ms var(--ease-out);
+}
+.fade-img.loaded {
+  opacity: 1;
+}
+
+/* Star toggle. */
+@keyframes star-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.28);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.star-pop {
+  animation: star-pop 280ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Modal: backdrop fades, card rises and settles. */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 200ms var(--ease-out);
+}
+.modal-enter-active .modal-card {
+  transition: transform 240ms var(--ease-out);
+}
+.modal-leave-active .modal-card {
+  transition: transform 160ms var(--ease-in);
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+.modal-enter-from .modal-card,
+.modal-leave-to .modal-card {
+  transform: translateY(8px) scale(0.97);
+}

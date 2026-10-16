@@ -1,0 +1,14 @@
+# .prettierignore
+dist/
+build/
+package.json
+package-lock.json
+*.min.js
+
+# Hand-formatted (compact headings; see its markdownlint comment)
+CHANGELOG.md
+
+# Generated or vendored
+android/
+patches/
+assets/

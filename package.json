@@ -1,0 +1,45 @@
+{
+  "name": "vic-theatre",
+  "private": true,
+  "version": "1.0.1",
+  "type": "module",
+  "scripts": {
+    "postinstall": "patch-package",
+    "start": "vite",
+    "build": "vue-tsc --noEmit && vite build && vite build --config vite.runner.config.ts",
+    "typecheck": "vue-tsc --noEmit",
+    "icons": "node scripts/make-icon.mjs && capacitor-assets generate --android",
+    "sync": "npm run build && cap sync android",
+    "android": "npm run sync && cap run android",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/background-runner": "^3.0.0",
+    "@capacitor/core": "^8.5.3",
+    "dayjs": "^1.11.23",
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.3",
+    "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/tsconfig": "^0.9.1",
+    "marked": "^18.1.1",
+    "patch-package": "^8.0.1",
+    "prettier": "^3.9.10",
+    "prettier-plugin-vue": "^1.1.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vue-tsc": "^3.3.13"
+  },
+  "allowScripts": {
+    "sharp@0.32.6": true
+  }
+}
