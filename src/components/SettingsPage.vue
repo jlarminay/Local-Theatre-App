@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import changelogMarkdown from '../../CHANGELOG.md?raw';
+import { useNow } from '../composables/useNow';
 import { useSaved } from '../composables/useSaved';
 import { AUTO_REFRESH_MIN_MS, useSchedule } from '../composables/useSchedule';
 import { formatDateTime, timeAgo } from '../lib/format';
@@ -20,11 +21,13 @@ import {
 } from '../lib/watch';
 import { goBack } from '../router';
 import BaseModal from './BaseModal.vue';
+import InfoButton from './InfoButton.vue';
 
 const { films, upcoming, updatedAt, lastCheck, loading, refresh, clearCache } = useSchedule();
 const { saved } = useSaved();
 
 const native = Capacitor.isNativePlatform();
+const now = useNow();
 const autoRefreshHours = AUTO_REFRESH_MIN_MS / 3_600_000;
 const autoRefreshLimit =
   autoRefreshHours === 1 ? 'once an hour' : `once every ${autoRefreshHours} hours`;
@@ -72,7 +75,7 @@ async function toggleAlerts() {
 // Modals are a query param (?info=…), so Android's Back closes them.
 const route = useRoute();
 const router = useRouter();
-type Modal = 'alerts' | 'changelog';
+type Modal = 'schedule' | 'alerts' | 'changelog';
 const openModal = computed(() => route.query.info as Modal | undefined);
 let openedHere = false;
 function openInfo(modal: Modal) {
@@ -151,19 +154,20 @@ const onClear = () =>
 
     <div class="flex flex-col gap-6 px-4 pt-5 pb-4">
       <section>
-        <h2 class="mb-2 font-display text-[22px] leading-none tracking-wide text-accent">
+        <h2
+          class="mb-2 flex items-center gap-2 font-display text-[22px] leading-none tracking-wide text-accent"
+        >
           Schedule
+          <InfoButton label="How the schedule refreshes" @click="openInfo('schedule')" />
         </h2>
         <dl class="settings-list">
           <div>
             <dt>Last updated</dt>
             <dd>
-              {{ updatedAt ? `${formatDateTime(updatedAt)} (${timeAgo(updatedAt)})` : 'Never' }}
+              {{
+                updatedAt ? `${formatDateTime(updatedAt)} (${timeAgo(updatedAt, now)})` : 'Never'
+              }}
             </dd>
-          </div>
-          <div>
-            <dt>Auto refresh</dt>
-            <dd>On opening the app, at most {{ autoRefreshLimit }}</dd>
           </div>
           <div>
             <dt>Listed</dt>
@@ -189,13 +193,7 @@ const onClear = () =>
           class="mb-2 flex items-center gap-2 font-display text-[22px] leading-none tracking-wide text-accent"
         >
           New film alerts
-          <button
-            class="grid h-5 w-5 place-items-center rounded-full border border-muted-1 bg-transparent p-0 font-serif text-[12px] leading-none tracking-normal text-muted-1 italic"
-            aria-label="How new film alerts work"
-            @click="openInfo('alerts')"
-          >
-            i
-          </button>
+          <InfoButton label="How new film alerts work" @click="openInfo('alerts')" />
         </h2>
         <dl class="settings-list">
           <div class="items-center">
@@ -307,6 +305,32 @@ const onClear = () =>
         </p>
       </section>
     </div>
+    <BaseModal :open="openModal === 'schedule'" title="How refreshing works" @close="closeInfo">
+      <ul class="m-0 flex list-none flex-col gap-2.5 p-0 text-[13px] leading-relaxed text-muted-2">
+        <li>
+          The app keeps a copy of the schedule on your phone, so it opens instantly and still works
+          without a connection.
+        </li>
+        <li>
+          Opening the app updates that copy from the Vic's site — at most {{ autoRefreshLimit }}.
+          Opening it again sooner just shows the copy you already have.
+        </li>
+        <li>
+          <strong class="text-ink">Refresh now</strong> always updates straight away, and restarts
+          the hour.
+        </li>
+        <li>
+          If an update fails (no signal, site down), you keep the last copy and the app tries again
+          next time it's due.
+        </li>
+        <li>
+          This is separate from the background check for new film alerts, which runs even when the
+          app is closed.
+        </li>
+      </ul>
+      <template #close>Got it</template>
+    </BaseModal>
+
     <BaseModal :open="openModal === 'alerts'" title="How alerts work" @close="closeInfo">
       <ul class="m-0 flex list-none flex-col gap-2.5 p-0 text-[13px] leading-relaxed text-muted-2">
         <li>
@@ -326,7 +350,6 @@ const onClear = () =>
           Android decides exactly when background work runs and may delay it to save battery. If
           alerts never arrive, set the app's battery usage to "Unrestricted".
         </li>
-        <li>Alerts only work in the installed app — not in a browser.</li>
       </ul>
       <template #close>Got it</template>
     </BaseModal>

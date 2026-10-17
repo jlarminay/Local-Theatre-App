@@ -1,3 +1,5 @@
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { createRouter, createWebHistory } from 'vue-router';
 
 import FilmDetail from './components/FilmDetail.vue';
@@ -8,7 +10,7 @@ export const TABS = ['saved', 'films', 'days'] as const;
 export type Tab = (typeof TABS)[number];
 
 // Every screen has a URL, so a reload (or the app being restored) lands back on
-// it. Android's Back button maps to history.back(), which the router handles.
+// it. Android's Back button is wired up at the bottom of this file.
 // meta.depth picks the page transition: deeper pages slide in, shallower slide back.
 export const router = createRouter({
   history: createWebHistory(),
@@ -55,4 +57,19 @@ export function openFilm(id: number) {
 export function goBack() {
   if (router.options.history.state.back) router.back();
   else router.replace('/films');
+}
+
+// Android's Back button. Capacitor doesn't pass it to the WebView by itself
+// (without this the app just closes), so route it through the router:
+// back through history; else from a modal, deeper page, or Saved/By day to
+// Films (the home tab); and from Films, background the app like other Android
+// apps do.
+if (Capacitor.isNativePlatform()) {
+  App.addListener('backButton', () => {
+    const route = router.currentRoute.value;
+    if (router.options.history.state.back) router.back();
+    else if (route.query.info) router.replace({ query: {} });
+    else if (route.path === '/films') App.minimizeApp();
+    else router.replace('/films');
+  });
 }

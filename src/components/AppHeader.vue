@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { useNow } from '../composables/useNow';
 import { useSchedule } from '../composables/useSchedule';
 import { timeAgo } from '../lib/format';
 import type { Tab } from '../router';
 
 const { updatedAt, loading, error } = useSchedule();
+const now = useNow();
 defineProps<{ tab: Tab }>();
 
 const tabs: { id: Tab; label: string }[] = [
@@ -26,7 +28,7 @@ const tabs: { id: Tab; label: string }[] = [
         <!-- Status only; refreshing lives in Settings. -->
         <p class="m-0 flex items-center gap-1 font-mono text-[11px] text-muted-1">
           <span v-if="loading" class="inline-block animate-spin" aria-hidden="true">↻</span>
-          {{ loading ? 'Updating…' : updatedAt ? `Updated ${timeAgo(updatedAt)}` : '' }}
+          {{ loading ? 'Updating…' : updatedAt ? `Updated ${timeAgo(updatedAt, now)}` : '' }}
         </p>
         <RouterLink
           to="/settings"

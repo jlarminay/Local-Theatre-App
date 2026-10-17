@@ -26,7 +26,7 @@ Vite's `/vic` proxy instead.
 ## Background checks
 
 `runner/runner.ts` runs in Capacitor Background Runner's headless JS engine roughly every
-6 hours (`capacitor.config.ts`). It reuses the parser from `src/lib/schedule.ts`, keeps a
+4 hours (`capacitor.config.ts`). It reuses the parser from `src/lib/schedule.ts`, keeps a
 "first seen" map of film ids in its key-value store, and notifies when an unseen film appears.
 The first check only records a baseline. Opening the app also marks the current films as seen.
 

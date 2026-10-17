@@ -9,7 +9,7 @@ import { recordSeen, type FirstSeen } from './schedule';
 
 export type { LastCheck };
 export const RUNNER_LABEL = 'com.joshlarminay.victheatre.check';
-export const CHECK_INTERVAL_MINUTES = 360;
+export const CHECK_INTERVAL_MINUTES = 240;
 
 const WEB_SEEN_KEY = 'vic-theatre:first-seen';
 const native = Capacitor.isNativePlatform();

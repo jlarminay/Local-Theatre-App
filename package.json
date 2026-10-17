@@ -1,7 +1,7 @@
 {
   "name": "vic-theatre",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "postinstall": "patch-package",
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/background-runner": "^3.0.0",
     "@capacitor/core": "^8.5.3",
     "dayjs": "^1.11.23",

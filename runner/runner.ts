@@ -1,5 +1,5 @@
 // Background runner: runs in Capacitor's headless JS engine (no DOM, no web
-// view, no plugins), roughly every 6 hours per capacitor.config.ts. Bundled to
+// view, no plugins), roughly every 4 hours per capacitor.config.ts. Bundled to
 // dist/runners/runner.js by vite.runner.config.ts.
 //
 // State lives in CapacitorKV (Android SharedPreferences), so the app reads and
@@ -88,7 +88,7 @@ function notifyNewFilms(titles: string[]) {
     notify(`${titles.length} new films at the Vic`, titles.join(' · '), titles.join('\n'));
 }
 
-// The scheduled 6-hourly check (also dispatched by "Force check now" in the app).
+// The scheduled 4-hourly check (also dispatched by "Force check now" in the app).
 runner.addEventListener('checkSchedule', async (resolve, reject) => {
   try {
     const response = await fetch(CALENDAR_URL);

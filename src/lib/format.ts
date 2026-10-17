@@ -24,13 +24,14 @@ export function dayKey(start: string): string {
   return dayjs(start).format('YYYY-MM-DD');
 }
 
-export function timeAgo(epochMs: number): string {
-  const minutes = dayjs().diff(epochMs, 'minute');
+/** `now` lets a ticking ref (useNow) drive re-renders. */
+export function timeAgo(epochMs: number, now: number = Date.now()): string {
+  const minutes = dayjs(now).diff(epochMs, 'minute');
   if (minutes < 1) return 'just now';
   if (minutes < 60) return `${minutes} min ago`;
-  const hours = dayjs().diff(epochMs, 'hour');
+  const hours = dayjs(now).diff(epochMs, 'hour');
   if (hours < 24) return `${hours} h ago`;
-  return `${dayjs().diff(epochMs, 'day')} d ago`;
+  return `${dayjs(now).diff(epochMs, 'day')} d ago`;
 }
 
 export const LOW_SEATS = 20;
