@@ -11,5 +11,6 @@
   "homepage": "https://www.victoriafilmfestival.com/festival/victoria-film-theatre-monthly-calendar/",
   "owner": "Victoria Film Festival",
   "domains": ["www.victoriafilmfestival.com"],
+  "titleExtras": ["Fright Fest", "Retromania", "CAMP! Series", "Director's Cut"],
   "enabledByDefault": true
 }

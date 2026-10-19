@@ -28,9 +28,9 @@ describe('titleKey', () => {
 });
 
 describe('filmYear', () => {
-  test('from a trailing year in the title, else a year item in meta', () => {
-    assert.equal(filmYear(film('a', 'Suspiria (1977)')), 1977);
+  test('a year item in meta; titles don’t count (theatres add the screening year)', () => {
     assert.equal(filmYear(film('a', 'Suspiria', ['R', 'Horror', '2018', '152 min'])), 2018);
+    assert.equal(filmYear(film('a', 'Rocky Horror Picture Show 2026')), null);
     assert.equal(filmYear(film('a', 'Suspiria', ['R', '152 min'])), null);
   });
 });
@@ -48,9 +48,17 @@ describe('groupFilms', () => {
     ]);
   });
 
-  test('different known years stay apart; an unknown year still merges', () => {
-    assert.equal(groupFilms([film('a', 'Suspiria 1977'), film('b', 'Suspiria (2018)')]).length, 2);
+  test('release years far apart stay separate; close or unknown years merge', () => {
+    const suspiria = (theatre: string, year: string) => film(theatre, 'Suspiria', [year]);
+    assert.equal(groupFilms([suspiria('a', '1977'), suspiria('b', '2018')]).length, 2);
+    assert.equal(groupFilms([suspiria('a', '1980'), suspiria('b', '1978')]).length, 1);
     assert.equal(groupFilms([film('a', 'Suspiria 1977'), film('b', 'Suspiria')]).length, 1);
+    // The Vic's screening-year title vs Cinecenta's (slightly wrong) release year.
+    const rocky = groupFilms([
+      film('vic', 'Rocky Horror Picture Show 2026', ['18A', '1975', '100 min']),
+      film('cc', 'The Rocky Horror Picture Show', ['Jim Sharman', '1974', '100 min']),
+    ]);
+    assert.equal(rocky.length, 1);
   });
 
   test('never merges two listings from the same theatre', () => {

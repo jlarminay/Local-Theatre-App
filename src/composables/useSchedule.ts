@@ -1,9 +1,10 @@
 import dayjs from 'dayjs';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import type { FirstSeen, HostFilm, HostShowtime, HostState } from '../host/host';
-import { groupFilms } from '../host/merge';
+import { filmYear, groupFilms } from '../host/merge';
 import { clearTheatreData, loadState, refreshTheatres, setEnabledTheatres } from '../lib/watch';
+import { usePosters, type Backdrop, type Lookup, type Poster } from './usePosters';
 
 export type Showtime = HostShowtime;
 /**
@@ -18,6 +19,16 @@ export type Film = HostFilm & {
   links: { theatre: string; url: string }[];
   showtimes: Showtime[];
   isNew: boolean;
+  /**
+   * A poster from The Movie Database, when one of its theatres is set to use
+   * them and a match was found. Lists show it instead of `image`; the film
+   * page keeps a wide `image` as its banner.
+   */
+  poster?: Poster;
+  /** A wide still from The Movie Database, for the film page's banner. */
+  backdrop?: Backdrop;
+  /** What to look the poster up by, when the film wants one (see usePosters). */
+  posterLookup?: Lookup;
 };
 
 // The schedule is whatever the theatre plugins last returned, held by the
@@ -115,6 +126,8 @@ function setCombineFilms(on: boolean) {
   }
 }
 
+const { usesDatabase, cachedImages, requestPosters, tmdbAvailable } = usePosters();
+
 const detailScore = (film: HostFilm) =>
   (film.image ? 2 : 0) + (film.synopsis?.length ? 1 : 0) + (film.meta?.length ? 1 : 0);
 const synopsisLength = (film: HostFilm) => film.synopsis?.join('').length ?? 0;
@@ -131,6 +144,15 @@ function combine(members: HostFilm[], showtimes: Showtime[], firstSeen: FirstSee
   // New only if every theatre's listing is: a film the Vic has had for weeks
   // isn't new just because Cinecenta added it.
   const seen = members.map((film) => firstSeen[film.key]);
+  const wantsPoster = members.some((film) => usesDatabase(theatreOf(film.theatre)));
+  const lookup: Lookup | undefined = wantsPoster
+    ? {
+        title: main.title,
+        year: [main, ...rest].map(filmYear).find((y) => y !== null) ?? null,
+        // The main listing's theatre's wording to cut (its title is the one searched).
+        extras: theatreOf(main.theatre)?.titleExtras ?? [],
+      }
+    : undefined;
   return {
     ...main,
     image: withImage?.image,
@@ -144,6 +166,8 @@ function combine(members: HostFilm[], showtimes: Showtime[], firstSeen: FirstSee
     links: members.flatMap((film) => (film.url ? [{ theatre: film.theatre, url: film.url }] : [])),
     showtimes,
     isNew: seen.every(Boolean) && Date.now() - Math.min(...seen) < NEW_FOR_MS,
+    ...(lookup && cachedImages(lookup)),
+    posterLookup: lookup,
   };
 }
 
@@ -169,6 +193,14 @@ const films = computed<Film[]>(() => {
     )
     .sort((a, b) => a.showtimes[0].start.localeCompare(b.showtimes[0].start));
 });
+
+// Look up posters for films that want one and don't have it yet.
+// Also when a key is entered, for films already on screen.
+watch([films, tmdbAvailable], ([current]) =>
+  requestPosters(
+    current.flatMap((film) => (film.posterLookup && !film.poster ? [film.posterLookup] : [])),
+  ),
+);
 
 /** The film (combined or not) that a theatre's film key belongs to. */
 const filmByKey = computed(

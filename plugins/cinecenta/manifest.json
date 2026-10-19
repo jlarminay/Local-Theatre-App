@@ -1,0 +1,15 @@
+{
+  "$schema": "../sdk/manifest.schema.json",
+  "id": "cinecenta",
+  "name": "Cinecenta",
+  "shortName": "CC",
+  "color": "#f08a24",
+  "version": "1.0.0",
+  "author": "Josh Larminay",
+  "updated": "2026-10-18",
+  "apiVersion": 1,
+  "homepage": "https://www.cinecenta.com/calendar/",
+  "domains": ["www.cinecenta.com"],
+  "titleExtras": ["DUFF", "w/*", "Presented by*"],
+  "enabledByDefault": false
+}

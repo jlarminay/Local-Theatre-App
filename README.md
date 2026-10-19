@@ -21,7 +21,8 @@ schedule in a readable way and sends a notification when a new film is added.
 - **Theatre plugins** (`plugins/<id>/`, see below) fetch and parse each theatre's site. The Vic's
   showtimes come from its [monthly calendar page](https://www.victoriafilmfestival.com/festival/victoria-film-theatre-monthly-calendar/),
   which embeds its events as JSON, and its posters and synopses from WooCommerce's public Store
-  API, in one request for all films.
+  API, in one request for all films. Cinecenta's showtimes come from The Events Calendar's public
+  REST API, and its details from one event page per film (cached, refreshed every few days).
 - **The background runner** (`runner/runner.ts`, Capacitor's headless QuickJS engine) is the only
   place plugins run on the phone. The plugin host (`src/host/host.ts`) runs the enabled ones in
   order, keeps each theatre's last good result if a run fails, and stores everything in the

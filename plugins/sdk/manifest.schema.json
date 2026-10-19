@@ -45,6 +45,16 @@
       "minLength": 1,
       "description": "Who runs the theatre, if not obvious from its name; named in the About disclaimer."
     },
+    "posterSource": {
+      "enum": ["theatre", "database"],
+      "default": "database",
+      "description": "With a TMDB key set, the app shows The Movie Database\'s posters (\"database\", the default); \"theatre\" opts this plugin out."
+    },
+    "titleExtras": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Event wording cut out of titles when looking films up on The Movie Database, e.g. [\"Fright Fest\", \"Director's Cut\", \"w/*\"]. A trailing * also cuts everything after."
+    },
     "enabledByDefault": {
       "type": "boolean",
       "default": true,

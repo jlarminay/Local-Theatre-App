@@ -1,16 +1,32 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
+import { usePosters } from '../composables/usePosters';
 import { savedAsFilm, useSaved } from '../composables/useSaved';
 import { useSchedule } from '../composables/useSchedule';
 import { formatDay, formatTime, LOW_SEATS } from '../lib/format';
 import { goBack } from '../router';
+import FixMatchModal from './FixMatchModal.vue';
 import StarIcon from './StarIcon.vue';
 import TheatreTag from './TheatreTag.vue';
 
 const { filmByKey, theatreOf, multiTheatre } = useSchedule();
 const props = defineProps<{ filmKey: string }>();
 const { savedByKey, isSaved, toggleSaved, unsave } = useSaved();
+const { tmdbAvailable } = usePosters();
+
+// Fix a wrong TMDB match. The modal is a query param (?info=fix), like
+// Settings' modals, so Android's Back closes it.
+const route = useRoute();
+const router = useRouter();
+const fixOpen = computed(() => route.query.info === 'fix');
+let fixOpenedHere = false;
+function openFix() {
+  fixOpenedHere = true;
+  router.push({ query: { info: 'fix' } });
+}
+const closeFix = () => (fixOpenedHere ? router.back() : router.replace({ query: {} }));
 
 // Any of a combined film's keys opens it. A saved film that has left the
 // schedule still opens, from its saved snapshot.
@@ -23,7 +39,16 @@ const theatreName = (id: string) => theatreOf(id)?.name ?? 'the theatre';
 /** Tag each showing with its theatre when the film is on at more than one. */
 const severalTheatres = computed(() => (film.value?.theatres.length ?? 0) > 1);
 
-const tall = computed(() => (film.value?.imageAspect ?? 1) < 0.9);
+// The 16:9 banner: TMDB's backdrop (a still from the film) when there is one,
+// else the theatre's own wide still, else a poster or square image shown whole.
+const banner = computed(() => {
+  const current = film.value;
+  if (!current) return null;
+  if (current.backdrop) return current.backdrop;
+  if (current.image && (current.imageAspect ?? 1) >= 1.2) return current;
+  return current.poster ?? current;
+});
+const tall = computed(() => (banner.value?.imageAspect ?? 1) < 0.9);
 
 function onStar() {
   if (!film.value) return;
@@ -38,16 +63,18 @@ function onStar() {
          bottom); tall posters would lose most of themselves, so they're shown
          whole over a blurred copy instead. -->
     <div class="relative overflow-hidden bg-imgbg">
-      <template v-if="film?.image">
+      <template v-if="film && banner?.image">
         <img
           v-if="tall"
-          :src="film.image"
+          :src="banner.image"
           alt=""
           aria-hidden="true"
           class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-xl"
         />
         <img
-          :src="film.image"
+          :src="banner.image"
+          :srcset="banner.imageSrcset"
+          sizes="(min-width: 768px) 768px, 100vw"
           :alt="film.title"
           class="fade-img relative aspect-video w-full"
           :class="tall ? 'object-contain' : 'object-cover'"
@@ -68,17 +95,34 @@ function onStar() {
       >
         ← Back
       </button>
-      <button
-        v-if="film"
-        class="pointer-events-auto flex items-center gap-1.5 rounded-full border-0 bg-black/60 py-2 pr-4 pl-3 backdrop-blur transition-colors duration-200"
-        :class="isSaved(film) ? 'text-accent' : 'text-white'"
-        :aria-pressed="isSaved(film)"
-        @click="onStar"
-      >
-        <span class="h-5 w-5"><StarIcon :filled="isSaved(film)" /></span>
-        <span class="text-white">{{ isSaved(film) ? 'Saved' : 'Save' }}</span>
-      </button>
+      <span class="flex gap-2">
+        <button
+          v-if="tmdbAvailable && film?.posterLookup"
+          class="pointer-events-auto rounded-full border-0 bg-black/60 px-4 py-2 text-white backdrop-blur"
+          aria-label="Fix the poster match"
+          @click="openFix"
+        >
+          Fix
+        </button>
+        <button
+          v-if="film"
+          class="pointer-events-auto flex items-center gap-1.5 rounded-full border-0 bg-black/60 py-2 pr-4 pl-3 backdrop-blur transition-colors duration-200"
+          :class="isSaved(film) ? 'text-accent' : 'text-white'"
+          :aria-pressed="isSaved(film)"
+          @click="onStar"
+        >
+          <span class="h-5 w-5"><StarIcon :filled="isSaved(film)" /></span>
+          <span class="text-white">{{ isSaved(film) ? 'Saved' : 'Save' }}</span>
+        </button>
+      </span>
     </div>
+
+    <FixMatchModal
+      v-if="film?.posterLookup"
+      :open="fixOpen"
+      :lookup="film.posterLookup"
+      @close="closeFix"
+    />
 
     <div v-if="film" class="px-4 pt-4">
       <p

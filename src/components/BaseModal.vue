@@ -29,12 +29,15 @@ const emit = defineEmits<{ close: [] }>();
             <slot />
           </div>
           <div class="p-5 pt-4">
-            <button
-              class="w-full rounded-lg border-0 bg-accent py-2.5 text-[14px] font-medium text-white"
-              @click="emit('close')"
-            >
-              <slot name="close">Close</slot>
-            </button>
+            <!-- #actions replaces the single close button (e.g. Save + Cancel). -->
+            <slot name="actions">
+              <button
+                class="w-full rounded-lg border-0 bg-accent py-2.5 text-[14px] font-medium text-white"
+                @click="emit('close')"
+              >
+                <slot name="close">Close</slot>
+              </button>
+            </slot>
           </div>
         </div>
       </div>

@@ -5,7 +5,7 @@
 ## [Unreleased]
 ### Changed
 - Renamed to Local Theatre, with a new app ID (installs alongside Vic Theatre)
-- Theatres are now plugins, run by the background runner; the Vic is the first
+- Theatres are now plugins, run by the background runner: the Vic, and Cinecenta (off by default; turn it on in Settings → Theatres)
 - A theatre whose site fails keeps showing its last schedule
 - Settings → Theatres: turn each theatre on or off
 - Settings → Theatres: an (i) per theatre with who runs it, where its data comes from, the plugin's author and version, and its last run
@@ -15,6 +15,9 @@
 - Violet accent colour (the Vic's magenta is now its tag colour)
 - The About disclaimer lists each theatre
 - A film on at several theatres is shown once, with each theatre's showtimes tagged (Settings → Combine films to turn off)
+- Posters and banner stills from The Movie Database with your own TMDB key (Settings → TMDB key); a theatre can use its own images instead
+- Films page uses poster-shaped (2:3) tiles
+- Fix on a film's page: pick the right TMDB film when the poster match is wrong
 - Background check rate is now a setting: every 1, 3, 6, 12 or 24 hours, or never (default 3 hours)
 
 ## [1.0.2] - 2026-10-16

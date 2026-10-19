@@ -43,6 +43,18 @@ export function checkManifest(raw: unknown, folder: string): Manifest {
         problems.push(`"${key}" must be a non-empty string`);
     if (m.updated !== undefined && (typeof m.updated !== 'string' || !DATE.test(m.updated)))
       problems.push(`"updated" must be a date like "2026-10-18"`);
+    if (
+      m.posterSource !== undefined &&
+      m.posterSource !== 'theatre' &&
+      m.posterSource !== 'database'
+    )
+      problems.push(`"posterSource" must be "theatre" or "database"`);
+    if (
+      m.titleExtras !== undefined &&
+      (!Array.isArray(m.titleExtras) ||
+        !m.titleExtras.every((extra) => typeof extra === 'string' && extra.trim()))
+    )
+      problems.push(`"titleExtras" must be a list of phrases, e.g. ["Fright Fest", "w/*"]`);
     if (m.enabledByDefault !== undefined && typeof m.enabledByDefault !== 'boolean')
       problems.push(`"enabledByDefault" must be true or false`);
   }

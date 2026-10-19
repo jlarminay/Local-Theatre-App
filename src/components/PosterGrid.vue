@@ -26,10 +26,20 @@ function pinInPlace(el: Element) {
 
 const markLoaded = (event: Event) => (event.target as HTMLElement).classList.add('loaded');
 
-// Tiles are square. Other shapes are shown whole, over a blurred, zoomed copy
-// of themselves that fills the rest of the tile. Unknown aspect is treated as
-// non-square: the copy just sits hidden behind a square image.
-const needsFill = (film: Film) => !film.imageAspect || Math.abs(film.imageAspect - 1) > 0.02;
+/** What the tile shows: a movie-database poster when the film has one, else the theatre's image. */
+const tile = (film: Film) => film.poster ?? film;
+
+// Tiles are poster-shaped (2:3), since most films have a TMDB poster. Other
+// shapes (a theatre's own square or wide images) are shown whole, over a
+// blurred, zoomed copy of themselves that fills the rest of the tile. Unknown
+// aspect is treated as not 2:3: the copy just sits hidden behind a poster.
+// TMDB posters are nominally 2:3 but some are slightly off, so they're
+// cropped to fill (object-cover) instead; theatres' own images never are.
+const POSTER = 2 / 3;
+const needsFill = (film: Film) => {
+  const aspect = tile(film).imageAspect;
+  return !aspect || Math.abs(aspect - POSTER) > 0.02;
+};
 </script>
 
 <template>
@@ -46,28 +56,29 @@ const needsFill = (film: Film) => !film.imageAspect || Math.abs(film.imageAspect
         :aria-label="film.title"
         @click="openFilm(film.key)"
       >
-        <template v-if="film.image">
+        <template v-if="tile(film).image">
           <img
             v-if="needsFill(film)"
-            :src="film.image"
+            :src="tile(film).image"
             alt=""
             aria-hidden="true"
             loading="lazy"
             class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-xl"
           />
           <img
-            :src="film.image"
-            :srcset="film.imageSrcset"
+            :src="tile(film).image"
+            :srcset="tile(film).imageSrcset"
             sizes="(min-width: 640px) 33vw, 50vw"
             :alt="film.title"
             loading="lazy"
-            class="fade-img relative block aspect-square w-full object-contain"
+            class="fade-img relative block aspect-2/3 w-full"
+            :class="film.poster ? 'object-cover' : 'object-contain'"
             @load="markLoaded"
           />
         </template>
         <div
           v-else
-          class="grid aspect-square w-full place-items-center p-3 text-center font-display text-2xl text-muted-2"
+          class="grid aspect-2/3 w-full place-items-center p-3 text-center font-display text-2xl text-muted-2"
         >
           {{ film.title }}
         </div>

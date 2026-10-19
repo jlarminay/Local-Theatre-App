@@ -28,6 +28,20 @@ export interface Manifest {
   owner?: string;
   /** Hosts ctx.http may fetch. */
   domains: string[];
+  /**
+   * Posters: when the user has a TMDB key, the app shows The Movie Database's
+   * posters for every theatre ("database", the default). "theatre" opts this
+   * plugin out, e.g. when its own artwork is better. Users can also choose
+   * "Use own images" per theatre.
+   */
+  posterSource?: 'theatre' | 'database';
+  /**
+   * Event wording in this theatre's titles, cut out when looking films up on
+   * The Movie Database: series names ("Fright Fest"), version notes
+   * ("Director's Cut"). A trailing "*" also cuts everything after ("w/*" for
+   * "w/ Q&A"). Curly and straight apostrophes are treated alike.
+   */
+  titleExtras?: string[];
   /** Whether it's switched on for a fresh install. Default true. */
   enabledByDefault?: boolean;
 }

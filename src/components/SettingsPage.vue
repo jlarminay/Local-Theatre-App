@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import changelogMarkdown from '../../CHANGELOG.md?raw';
 import { useNow } from '../composables/useNow';
+import { usePosters } from '../composables/usePosters';
 import { useSaved } from '../composables/useSaved';
 import { AUTO_REFRESH_MIN_MS, useSchedule } from '../composables/useSchedule';
 import { CHECK_RATES, checkRateLabel, DEFAULT_CHECK_RATE, type CheckRate } from '../host/checks';
@@ -116,7 +117,7 @@ function theatreStatus(theatre: (typeof theatres.value)[number]) {
   if (!theatre.updatedAt) return { error: false, text: theatre.enabled ? 'Not loaded yet' : 'Off' };
   return {
     error: false,
-    text: `${theatre.films.length} films · updated ${timeAgo(theatre.updatedAt, now.value)}`,
+    text: `${theatre.films.length} films`,
   };
 }
 
@@ -130,8 +131,38 @@ const onToggleTheatre = (id: string, on: boolean) =>
 const route = useRoute();
 const router = useRouter();
 /** 'schedule', 'alerts', 'changelog', or 'theatre:<id>' for a theatre's info. */
-type Modal = 'schedule' | 'alerts' | 'changelog' | `theatre:${string}`;
+type Modal = 'schedule' | 'alerts' | 'changelog' | 'tmdb-key' | `theatre:${string}`;
 const openModal = computed(() => route.query.info as Modal | undefined);
+// Per-theatre poster choice, in the theatre's info. Saved as soon as it's picked.
+const { tmdbAvailable, keyHint, saveKey, removeKey, imageChoice, setImageChoice, lookupError } =
+  usePosters();
+
+// The TMDB key modal. The key is write-only: the field always starts empty,
+// and saving replaces whatever was set before.
+const keyInput = ref('');
+const keyError = ref('');
+const keySaving = ref(false);
+function openKeyModal() {
+  keyInput.value = '';
+  keyError.value = '';
+  openInfo('tmdb-key');
+}
+async function onSaveKey() {
+  keySaving.value = true;
+  keyError.value = '';
+  try {
+    await saveKey(keyInput.value);
+    keyInput.value = '';
+    closeInfo();
+  } catch (err) {
+    keyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    keySaving.value = false;
+  }
+}
+const onImageChoice = (id: string, event: Event) =>
+  setImageChoice(id, (event.target as HTMLSelectElement).value as 'default' | 'own');
+
 /** "victoriafilmfestival.com" from a homepage URL. */
 const siteName = (url: string) => {
   try {
@@ -224,6 +255,49 @@ const onClear = () =>
     <div class="flex flex-col gap-6 px-4 pt-5 pb-4">
       <section>
         <h2 class="mb-2 font-display text-[22px] leading-none tracking-wide text-accent">
+          Settings
+        </h2>
+        <dl class="settings-list">
+          <div v-if="theatres.length > 1" class="items-center">
+            <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+              <span class="text-[14px]">Combine films</span>
+              <span class="text-[12px] text-muted-1">
+                Show a film on at several theatres once, with every theatre's showtimes
+              </span>
+            </dt>
+            <dd>
+              <ToggleSwitch
+                :on="combineFilms"
+                label="Combine films on at several theatres"
+                @toggle="setCombineFilms(!combineFilms)"
+              />
+            </dd>
+          </div>
+          <div class="items-center">
+            <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+              <span class="text-[14px]">TMDB key</span>
+              <span class="text-[12px] text-muted-1"> For posters from The Movie Database </span>
+              <span v-if="lookupError" class="text-[12px] text-error">{{ lookupError }}</span>
+            </dt>
+            <dd class="flex flex-wrap gap-2">
+              <template v-if="keyHint">
+                <button class="settings-button whitespace-nowrap" @click="removeKey">
+                  Remove key
+                </button>
+                <button class="settings-button whitespace-nowrap" @click="openKeyModal">
+                  Add another
+                </button>
+              </template>
+              <button v-else class="settings-button whitespace-nowrap" @click="openKeyModal">
+                Add key
+              </button>
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section>
+        <h2 class="mb-2 font-display text-[22px] leading-none tracking-wide text-accent">
           Theatres
         </h2>
         <dl class="settings-list">
@@ -254,26 +328,6 @@ const onClear = () =>
             </dd>
           </div>
         </dl>
-        <!-- A wrapper carries the gap: .settings-list's own margin: 0 overrides mt-*. -->
-        <div v-if="theatres.length > 1" class="mt-5">
-          <dl class="settings-list">
-            <div class="items-center">
-              <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
-                <span class="text-[14px]">Combine films</span>
-                <span class="text-[12px] text-muted-1">
-                  Show a film on at several theatres once, with every theatre's showtimes
-                </span>
-              </dt>
-              <dd>
-                <ToggleSwitch
-                  :on="combineFilms"
-                  label="Combine films on at several theatres"
-                  @toggle="setCombineFilms(!combineFilms)"
-                />
-              </dd>
-            </div>
-          </dl>
-        </div>
       </section>
 
       <section>
@@ -428,6 +482,12 @@ const onClear = () =>
             their public websites and may be out of date. Always check the official site before
             buying tickets.
           </p>
+          <p v-if="tmdbAvailable" class="mt-1.5 mb-0">
+            Some posters come from
+            <a href="https://www.themoviedb.org/" target="_blank" rel="noopener" class="text-accent"
+              >The Movie Database (TMDB)</a
+            >. This product uses the TMDB API but is not endorsed or certified by TMDB.
+          </p>
         </div>
       </section>
     </div>
@@ -527,6 +587,36 @@ const onClear = () =>
               {{ infoTheatre.films.length }} films · {{ infoTheatre.showtimes.length }} showings
             </dd>
           </div>
+          <div class="items-center">
+            <dt><label for="image-choice">Posters</label></dt>
+            <dd class="flex flex-col gap-1">
+              <span class="relative self-start">
+                <select
+                  id="image-choice"
+                  :value="imageChoice(infoTheatre.manifest.id)"
+                  :disabled="!tmdbAvailable"
+                  class="appearance-none rounded-lg border border-border-2 bg-paper py-1.5 pr-8 pl-3 text-[13px] text-ink disabled:opacity-50"
+                  @change="onImageChoice(infoTheatre.manifest.id, $event)"
+                >
+                  <option value="default">Default</option>
+                  <option value="own">Use own images</option>
+                </select>
+                <svg
+                  viewBox="0 0 24 24"
+                  class="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-muted-1"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span v-if="!tmdbAvailable" class="text-[12px] text-muted-1">
+                Uses the theatre's images until a TMDB key is added in Settings.
+              </span>
+            </dd>
+          </div>
         </dl>
         <details v-if="infoTheatre.lastRun?.log.length" class="mt-3 text-[12px] text-muted-2">
           <summary class="cursor-pointer text-muted-1">Log from the last run</summary>
@@ -536,6 +626,54 @@ const onClear = () =>
         </details>
       </template>
       <template #close>Close</template>
+    </BaseModal>
+
+    <BaseModal :open="openModal === 'tmdb-key'" title="TMDB key" @close="closeInfo">
+      <form class="flex flex-col gap-3 text-[13px] text-muted-2" @submit.prevent="onSaveKey">
+        <p class="m-0 leading-relaxed">
+          Posters can come from The Movie Database. It needs your own free key: sign up at
+          <a
+            href="https://www.themoviedb.org/settings/api"
+            target="_blank"
+            rel="noopener"
+            class="text-accent"
+            >themoviedb.org ↗</a
+          >
+          and paste the <strong class="text-ink">API Key</strong> or
+          <strong class="text-ink">API Read Access Token</strong>. It's kept only on this device.
+        </p>
+        <p v-if="keyHint" class="m-0">
+          A key ending <span class="font-mono text-ink">{{ keyHint }}</span> is set. Saving a new
+          one replaces it.
+        </p>
+        <input
+          v-model="keyInput"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          :placeholder="keyHint ? 'New key' : 'Key'"
+          aria-label="TMDB key"
+          class="w-full rounded-lg border border-border-2 bg-paper px-3 py-2 font-mono text-[13px] text-ink"
+        />
+        <p v-if="keyError" class="m-0 text-error">{{ keyError }}</p>
+      </form>
+      <template #actions>
+        <div class="flex gap-2">
+          <button
+            class="flex-1 rounded-lg border border-border-2 bg-transparent py-2.5 text-[14px] text-ink"
+            @click="closeInfo"
+          >
+            Cancel
+          </button>
+          <button
+            class="flex-1 rounded-lg border-0 bg-accent py-2.5 text-[14px] font-medium text-white disabled:opacity-50"
+            :disabled="keySaving || !keyInput.trim()"
+            @click="onSaveKey"
+          >
+            {{ keySaving ? 'Checking…' : 'Save' }}
+          </button>
+        </div>
+      </template>
     </BaseModal>
 
     <BaseModal :open="openModal === 'changelog'" title="Changelog" @close="closeInfo">

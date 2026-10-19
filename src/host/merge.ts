@@ -2,20 +2,26 @@
 // once. Deliberately conservative: titles must match exactly after
 // normalising case, accents, punctuation, "&"/"and", a leading "The/A/An" and
 // a trailing year. Series prefixes ("Fright Fest – Suspiria") are kept, since
-// stripping them is where wrong merges come from. Films whose years are both
-// known and differ ("Suspiria 1977" vs "Suspiria (2018)") stay apart, and a
-// theatre's own listings are never merged with each other.
+// stripping them is where wrong merges come from. A theatre's own listings
+// are never merged with each other.
+//
+// Films whose release years (from meta) are both known and more than
+// YEAR_SLACK apart stay separate: Suspiria 1977 vs 2018. Years in titles
+// don't count, since theatres add the screening year ("Rocky Horror Picture
+// Show 2026"), and some get release years slightly wrong (Cinecenta lists The
+// Shining as 1978).
 
 type Mergeable = { key: string; theatre: string; title: string; meta?: string[] };
 
 const YEAR_ONLY = /^\s*(19\d\d|20\d\d)\s*$/;
+const YEAR_SLACK = 2;
 const TRAILING_YEAR = /\s*\(?\b(19\d\d|20\d\d)\b\)?\s*$/;
 
 /** The comparable form of a title: "The Rocky Horror Picture Show (1975)" → "rocky horror picture show". */
 export function titleKey(title: string): string {
   return title
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(TRAILING_YEAR, '')
     .replace(/&/g, ' and ')
@@ -25,13 +31,10 @@ export function titleKey(title: string): string {
     .replace(/^(the|a|an) /, '');
 }
 
-/** The film's year, from its title or its meta line, if it has one. */
+/** The film's release year from its meta line ("PG · Drama · 2025 · 112 min"), if listed. */
 export function filmYear(film: Mergeable): number | null {
-  const fromTitle = TRAILING_YEAR.exec(film.title)?.[1];
-  if (fromTitle) return Number(fromTitle);
-  // Meta lines list the year on its own ("PG · Drama · 2025 · 112 min").
-  const fromMeta = film.meta?.find((item) => YEAR_ONLY.test(item));
-  return fromMeta ? Number(fromMeta.trim()) : null;
+  const year = film.meta?.find((item) => YEAR_ONLY.test(item));
+  return year ? Number(year.trim()) : null;
 }
 
 /**
@@ -48,7 +51,7 @@ export function groupFilms<F extends Mergeable>(films: F[]): F[][] {
           (g) =>
             g.title === title &&
             !g.theatres.has(film.theatre) &&
-            (g.year === null || year === null || g.year === year),
+            (g.year === null || year === null || Math.abs(g.year - year) <= YEAR_SLACK),
         )
       : undefined;
     if (group) {

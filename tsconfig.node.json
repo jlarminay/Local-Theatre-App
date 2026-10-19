@@ -18,6 +18,7 @@
     "plugins/sdk/new.ts",
     "plugins/**/*.test.ts",
     "src/host/**/*.test.ts",
+    "src/lib/**/*.test.ts",
     "vite.config.ts",
     "vite.runner.config.ts"
   ]
