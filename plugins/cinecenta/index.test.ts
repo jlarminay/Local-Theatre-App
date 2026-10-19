@@ -39,6 +39,8 @@ function fakeCtx(
     },
     mode,
     log: (...parts) => void logs.push(parts),
+    progress: () => {},
+    deadline: Date.now() + 60_000,
   };
   return { ctx, requested, logs, stored };
 }
@@ -101,18 +103,37 @@ describe('cinecenta: main()', () => {
     const rocky = result.showtimes.filter((s) => s.filmKey === 'the-rocky-horror-picture-show');
     assert.ok(rocky.length && rocky.every((s) => s.bookUrl?.includes('eventbrite')));
 
+    // Films whose page failed are marked for later; fetched ones aren't.
+    assert.equal(result.films.find((f) => f.key === 'the-thing')?.detailsPending, true);
+    assert.equal(winter.detailsPending, undefined);
+
     // Titles are decoded, and films whose page failed still appear.
     assert.ok(result.films.some((film) => film.title === 'The Room – Presented by Greg Sestero'));
     assert.equal(logs.length, result.films.length - 2);
   });
 
-  test('background: one API request, details from the store', async () => {
+  test('background: details from the store; only films without details are fetched', async () => {
     const first = fakeCtx('foreground');
     await main(first.ctx);
     const { ctx, requested } = fakeCtx('background', first.stored);
     const { result } = validateResult(await main(ctx));
-    assert.equal(requested.length, 1);
     assert.ok(result.films.find((film) => film.key === 'winter-of-the-crow')!.synopsis?.length);
+    // The two films with fixtures are cached, so only the others' pages are tried again.
+    const pages = requested.filter((url) => url.includes('/calendar/'));
+    assert.equal(pages.length, result.films.length - 2);
+    assert.ok(!pages.some((url) => url.includes('winter-of-the-crow')));
+  });
+
+  test('background: no page requests once every film has details', async () => {
+    const first = fakeCtx('foreground');
+    await main(first.ctx);
+    const cache = first.stored.details as Record<string, unknown>;
+    // Pretend every film's page was read.
+    const films = (await main(fakeCtx('background', {}).ctx)).films;
+    for (const film of films) cache[film.key] ??= { at: Date.now(), details: { atTheDoor: true } };
+    const { ctx, requested } = fakeCtx('background', first.stored);
+    await main(ctx);
+    assert.equal(requested.length, 1);
   });
 
   test('details older than a few days are fetched again', async () => {

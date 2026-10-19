@@ -65,6 +65,9 @@ const ctx: Ctx = {
   },
   mode: background ? 'background' : 'foreground',
   log: (...parts) => console.error(`[${id}]`, ...parts),
+  progress: (step, done, total) =>
+    console.error(`[${id}] … ${step}${total ? ` ${done ?? 0}/${total}` : ''}`),
+  deadline: Date.now() + Math.min(plugin.manifest.timeoutSeconds ?? 60, 300) * 1000,
 };
 
 const started = Date.now();

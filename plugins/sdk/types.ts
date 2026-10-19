@@ -42,6 +42,11 @@ export interface Manifest {
    * "w/ Q&A"). Curly and straight apostrophes are treated alike.
    */
   titleExtras?: string[];
+  /**
+   * How long a run may take before the host stops it, in seconds (default 60,
+   * max 300). For slow sites; the user waits on in-app refreshes, so keep it modest.
+   */
+  timeoutSeconds?: number;
   /** Whether it's switched on for a fresh install. Default true. */
   enabledByDefault?: boolean;
 }
@@ -63,6 +68,14 @@ export interface Ctx {
    */
   mode: 'foreground' | 'background';
   log(...args: unknown[]): void;
+  /**
+   * What the plugin is doing now, shown in the app's refresh progress window,
+   * e.g. progress('Reading the calendar') or progress('Fetching film details', 3, 12).
+   * Optional to call; cheap enough to call per item.
+   */
+  progress(step: string, done?: number, total?: number): void;
+  /** When the host will stop this run (epoch ms): budget slow work against it. */
+  deadline: number;
 }
 
 export interface Film {
@@ -80,6 +93,12 @@ export interface Film {
   synopsis?: string[];
   /** Highlighted notes, e.g. "Membership required". */
   flags?: string[];
+  /**
+   * True while the plugin hasn't fetched this film's details yet but will on
+   * a later refresh (e.g. a time budget ran out). The app holds poster
+   * lookups until then, since the details carry the release year.
+   */
+  detailsPending?: boolean;
 }
 
 export interface Showtime {

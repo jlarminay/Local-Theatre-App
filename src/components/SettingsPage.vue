@@ -11,6 +11,7 @@ import { useSaved } from '../composables/useSaved';
 import { AUTO_REFRESH_MIN_MS, useSchedule } from '../composables/useSchedule';
 import { CHECK_RATES, checkRateLabel, DEFAULT_CHECK_RATE, type CheckRate } from '../host/checks';
 import { formatDate, formatDateTime, timeAgo } from '../lib/format';
+import { canScanQr, scanQr } from '../lib/scanQr';
 import {
   alertsEnabled,
   checkNow,
@@ -147,6 +148,20 @@ function openKeyModal() {
   keyError.value = '';
   openInfo('tmdb-key');
 }
+// Bringing the key over from a computer: scan it from a QR code instead of typing.
+const keyScanStatus = ref('');
+async function onScanKey() {
+  keyError.value = '';
+  try {
+    const text = await scanQr((status) => (keyScanStatus.value = status));
+    if (text) keyInput.value = text;
+  } catch (err) {
+    keyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    keyScanStatus.value = '';
+  }
+}
+
 async function onSaveKey() {
   keySaving.value = true;
   keyError.value = '';
@@ -244,10 +259,22 @@ const onClear = () =>
       class="sticky top-0 z-10 flex items-center gap-3 border-b border-border-1 bg-paper/95 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3 backdrop-blur"
     >
       <button
-        class="rounded-full border border-border-2 bg-transparent px-4 py-1.5 text-ink"
+        class="flex items-center gap-1.5 rounded-full border border-border-2 bg-transparent py-1.5 pr-4 pl-3 text-ink"
         @click="goBack"
       >
-        ← Back
+        <svg
+          viewBox="0 0 24 24"
+          class="h-4 w-4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M19 12H5m6-6-6 6 6 6" />
+        </svg>
+        Back
       </button>
       <h1 class="m-0 font-display text-[32px] leading-none tracking-wide">Settings</h1>
     </header>
@@ -466,7 +493,7 @@ const onClear = () =>
             </dd>
           </div>
         </dl>
-        <div class="mt-4 text-[11px] leading-relaxed text-muted-1">
+        <div class="mt-4 text-[12px] leading-relaxed text-muted-1">
           <p class="m-0">
             This is an unofficial, personal project made for fun. It isn't affiliated with, endorsed
             by, or connected to any of the theatres it lists:
@@ -646,15 +673,41 @@ const onClear = () =>
           A key ending <span class="font-mono text-ink">{{ keyHint }}</span> is set. Saving a new
           one replaces it.
         </p>
-        <input
-          v-model="keyInput"
-          type="password"
-          autocomplete="off"
-          spellcheck="false"
-          :placeholder="keyHint ? 'New key' : 'Key'"
-          aria-label="TMDB key"
-          class="w-full rounded-lg border border-border-2 bg-paper px-3 py-2 font-mono text-[13px] text-ink"
-        />
+        <div class="flex gap-2">
+          <input
+            v-model="keyInput"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="keyHint ? 'New key' : 'Key'"
+            aria-label="TMDB key"
+            class="min-w-0 flex-1 rounded-lg border border-border-2 bg-paper px-3 py-2 font-mono text-[13px] text-ink"
+          />
+          <button
+            v-if="canScanQr"
+            type="button"
+            class="grid w-11 shrink-0 place-items-center rounded-lg border border-border-2 bg-transparent text-ink"
+            aria-label="Scan the key from a QR code"
+            :disabled="Boolean(keyScanStatus)"
+            @click="onScanKey"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              class="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.8l1.4-2h6.6l1.4 2h1.8A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"
+              />
+              <circle cx="12" cy="13" r="3.5" />
+            </svg>
+          </button>
+        </div>
+        <p v-if="keyScanStatus" class="m-0">{{ keyScanStatus }}</p>
         <p v-if="keyError" class="m-0 text-error">{{ keyError }}</p>
       </form>
       <template #actions>

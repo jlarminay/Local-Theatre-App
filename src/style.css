@@ -32,6 +32,15 @@
 body {
   margin: 0;
 }
+/* Pages and tabs slide in from 24px aside (below), which for a moment pokes
+   past the right edge: without this the page briefly scrolls sideways (a
+   flash of horizontal scrollbar, and on phones a nudge of the viewport that
+   shifts the pinned bars). clip, not hidden: hidden would make a scroll
+   container and break the sticky header and the film page's Back bar. */
+html,
+body {
+  overflow-x: clip;
+}
 
 /* Clearance above Android's navigation bar. Capacitor exposes the inset as
    env() on newer WebViews and as --safe-area-inset-bottom (insetsHandling:
@@ -97,8 +106,7 @@ body {
 .tab-prev-enter-from {
   transform: translateX(-24px);
 }
-/* Pages only fade on leave: a transform would turn the film page's fixed
-   Back/Save bar into an absolutely positioned one mid-animation. */
+/* Leaving tabs also drift a little; pages only fade on leave. */
 .tab-next-leave-to {
   transform: translateX(-10px);
 }

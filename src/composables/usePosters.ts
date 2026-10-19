@@ -123,7 +123,10 @@ function cachedImages(lookup: Lookup): { poster?: Poster; backdrop?: Backdrop } 
 const get: Get = async (url, headers) => {
   if (Capacitor.isNativePlatform()) {
     const response = await CapacitorHttp.get({ url, headers, responseType: 'text' });
-    return { status: response.status, text: String(response.data) };
+    // CapacitorHttp parses JSON responses into objects even when asked for text.
+    const text =
+      typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? null);
+    return { status: response.status, text };
   }
   const response = await fetch(url, { headers });
   return { status: response.status, text: await response.text() };

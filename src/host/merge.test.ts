@@ -61,6 +61,20 @@ describe('groupFilms', () => {
     assert.equal(rocky.length, 1);
   });
 
+  test('a theatre’s titleExtras are cut before comparing', () => {
+    const extras = (f: { theatre: string }) => (f.theatre === 'vic' ? ['Fright Fest'] : []);
+    const groups = groupFilms(
+      [film('vic', 'Fright Fest – Suspiria 1977', ['1977']), film('cc', 'Suspiria', ['1977'])],
+      extras,
+    );
+    assert.equal(groups.length, 1);
+    // Without them, the prefix keeps them apart.
+    assert.equal(
+      groupFilms([film('vic', 'Fright Fest – Suspiria 1977'), film('cc', 'Suspiria')]).length,
+      2,
+    );
+  });
+
   test('never merges two listings from the same theatre', () => {
     const groups = groupFilms([film('a', 'Dune'), film('a', 'Dune'), film('b', 'Dune')]);
     assert.deepEqual(titles(groups), [['a:Dune', 'b:Dune'], ['a:Dune']]);

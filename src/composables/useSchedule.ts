@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { computed, ref, watch } from 'vue';
 
-import type { FirstSeen, HostFilm, HostShowtime, HostState } from '../host/host';
+import type { FirstSeen, HostFilm, HostShowtime, HostState, RefreshProgress } from '../host/host';
 import { filmYear, groupFilms } from '../host/merge';
 import { clearTheatreData, loadState, refreshTheatres, setEnabledTheatres } from '../lib/watch';
 import { usePosters, type Backdrop, type Lookup, type Poster } from './usePosters';
@@ -58,6 +58,32 @@ type Cache = { version: number; state: HostState };
 
 const state = ref<HostState | null>(null);
 const loading = ref(false);
+/**
+ * The current (or last) refresh as it happened, for the update window. The
+ * last one is kept on the device, so the window still shows it after the app
+ * is closed and reopened.
+ */
+const PROGRESS_KEY = 'local-theatre:last-refresh';
+const progress = ref<RefreshProgress | null>(loadProgress());
+
+function loadProgress(): RefreshProgress | null {
+  try {
+    return JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? 'null') as RefreshProgress | null;
+  } catch {
+    return null;
+  }
+}
+
+function setProgress(next: RefreshProgress) {
+  progress.value = next;
+  // Saved once it's finished; mid-refresh updates only matter while the app is open.
+  if (!next.finishedAt) return;
+  try {
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
+  } catch {
+    // storage unavailable — the window just starts empty next launch
+  }
+}
 const error = ref('');
 
 function loadCache() {
@@ -144,7 +170,10 @@ function combine(members: HostFilm[], showtimes: Showtime[], firstSeen: FirstSee
   // New only if every theatre's listing is: a film the Vic has had for weeks
   // isn't new just because Cinecenta added it.
   const seen = members.map((film) => firstSeen[film.key]);
-  const wantsPoster = members.some((film) => usesDatabase(theatreOf(film.theatre)));
+  // Held while a listing's details (and so its release year) are still to come.
+  const wantsPoster =
+    members.some((film) => usesDatabase(theatreOf(film.theatre))) &&
+    !members.some((film) => film.detailsPending);
   const lookup: Lookup | undefined = wantsPoster
     ? {
         title: main.title,
@@ -179,7 +208,9 @@ const films = computed<Film[]>(() => {
   const listed = enabledTheatres.value
     .flatMap((theatre) => theatre.films)
     .filter((film) => showtimes.has(film.key));
-  const groups = combineFilms.value ? groupFilms(listed) : listed.map((film) => [film]);
+  const groups = combineFilms.value
+    ? groupFilms(listed, (film) => theatreOf(film.theatre)?.titleExtras ?? [])
+    : listed.map((film) => [film]);
   const firstSeen = state.value?.firstSeen ?? {};
   return groups
     .map((members) =>
@@ -196,10 +227,14 @@ const films = computed<Film[]>(() => {
 
 // Look up posters for films that want one and don't have it yet.
 // Also when a key is entered, for films already on screen.
-watch([films, tmdbAvailable], ([current]) =>
-  requestPosters(
-    current.flatMap((film) => (film.posterLookup && !film.poster ? [film.posterLookup] : [])),
-  ),
+// Immediate: also for the cached schedule shown at launch, before any refresh.
+watch(
+  [films, tmdbAvailable],
+  ([current]) =>
+    requestPosters(
+      current.flatMap((film) => (film.posterLookup && !film.poster ? [film.posterLookup] : [])),
+    ),
+  { immediate: true },
 );
 
 /** The film (combined or not) that a theatre's film key belongs to. */
@@ -242,7 +277,17 @@ async function refresh() {
     // storage unavailable — the limit just won't hold across restarts
   }
   try {
-    setState(await refreshTheatres());
+    // Shown straight away, until the runner's first progress arrives.
+    progress.value = {
+      startedAt: started,
+      theatres: enabledTheatres.value.map(({ manifest }) => ({
+        id: manifest.id,
+        name: manifest.name,
+        state: 'waiting',
+        steps: [],
+      })),
+    };
+    setState(await refreshTheatres(setProgress));
     // A failing theatre keeps its last results; say which one failed.
     error.value = enabledTheatres.value
       .filter(({ lastRun }) => lastRun && !lastRun.ok && lastRun.at >= started)
@@ -310,6 +355,7 @@ export function useSchedule() {
     updatedAt,
     lastCheck,
     loading,
+    progress,
     error,
     refresh,
     refreshOnLaunch,

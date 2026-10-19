@@ -88,6 +88,69 @@ describe('host', () => {
     assert.equal(aaa.lastRun?.ok, false);
   });
 
+  test('reports progress: waiting, running with steps, done/failed', async () => {
+    const seen: string[] = [];
+    const host = createHost({
+      kv: memoryKv(),
+      get,
+      plugins: [
+        plugin('aaa', async (ctx) => {
+          ctx.progress('Fetching', 1, 2);
+          return lineup('One');
+        }),
+        plugin('bbb', async () => {
+          throw new Error('down');
+        }),
+      ],
+    });
+    await host.refresh('foreground', (p) =>
+      seen.push(
+        p.theatres
+          .map((t) => `${t.id}:${t.state}${t.step ? `(${t.step} ${t.done}/${t.total})` : ''}`)
+          .join(' ') + (p.finishedAt ? ' ✓' : ''),
+      ),
+    );
+    assert.deepEqual(seen, [
+      'aaa:waiting bbb:waiting',
+      'aaa:running bbb:waiting',
+      'aaa:running(Fetching 1/2) bbb:waiting',
+      'aaa:done bbb:waiting',
+      'aaa:done bbb:running',
+      'aaa:done bbb:failed',
+      'aaa:done bbb:failed ✓',
+    ]);
+  });
+
+  test('keeps each theatre’s steps, a per-plugin timeout, and a deadline in ctx', async () => {
+    let last: import('./host.ts').RefreshProgress | undefined;
+    let deadline = 0;
+    const host = createHost({
+      kv: memoryKv(),
+      get,
+      plugins: [
+        plugin(
+          'aaa',
+          async (ctx) => {
+            deadline = ctx.deadline;
+            ctx.progress('Reading', 0, 2);
+            ctx.progress('Reading', 1, 2); // same step: no new line
+            ctx.log('page 2 failed');
+            ctx.progress('Read film B', 2, 2);
+            return lineup('One');
+          },
+          { timeoutSeconds: 120 },
+        ),
+      ],
+    });
+    const before = Date.now();
+    await host.refresh('foreground', (p) => (last = p));
+    assert.deepEqual(
+      last!.theatres[0].steps.map((s) => s.text),
+      ['Reading', 'page 2 failed', 'Read film B', 'Done · 1 films'],
+    );
+    assert.ok(deadline >= before + 119_000 && deadline <= Date.now() + 120_000);
+  });
+
   test('a plugin that hangs times out', async () => {
     const host = createHost({
       kv: memoryKv(),

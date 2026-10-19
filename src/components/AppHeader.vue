@@ -1,13 +1,29 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+
 import { useNow } from '../composables/useNow';
 import { useSchedule } from '../composables/useSchedule';
 import { timeAgo } from '../lib/format';
 import type { Tab } from '../router';
+import RefreshModal from './RefreshModal.vue';
 import TheatreFilter from './TheatreFilter.vue';
 
 const { updatedAt, loading, error } = useSchedule();
 const now = useNow();
 defineProps<{ tab: Tab }>();
+
+// The status opens the update window. A query param (?info=refresh), like the
+// other modals, so Android's Back closes it.
+const route = useRoute();
+const router = useRouter();
+const refreshOpen = computed(() => route.query.info === 'refresh');
+let openedHere = false;
+function openRefresh() {
+  openedHere = true;
+  router.push({ query: { info: 'refresh' } });
+}
+const closeRefresh = () => (openedHere ? router.back() : router.replace({ query: {} }));
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'saved', label: 'Saved' },
@@ -27,11 +43,22 @@ const tabs: { id: Tab; label: string }[] = [
         </h1>
       </div>
       <div class="flex items-center gap-2">
-        <!-- Status only; refreshing lives in Settings. -->
-        <p class="m-0 flex items-center gap-1 font-mono text-[11px] whitespace-nowrap text-muted-1">
-          <span v-if="loading" class="inline-block animate-spin" aria-hidden="true">↻</span>
-          {{ loading ? 'Updating…' : updatedAt ? `Updated ${timeAgo(updatedAt, now)}` : '' }}
-        </p>
+        <!-- Opens the update window: live progress, or how the last update went. -->
+        <button
+          class="m-0 flex items-center gap-1 rounded-full border border-border-2 bg-card px-2.5 py-1 font-mono text-[11px] whitespace-nowrap text-muted-1"
+          aria-label="Update details"
+          @click="openRefresh"
+        >
+          <span
+            v-if="loading"
+            class="inline-block animate-[spin_2.5s_linear_infinite]"
+            aria-hidden="true"
+            >↻</span
+          >
+          {{
+            loading ? 'Updating…' : updatedAt ? `Updated ${timeAgo(updatedAt, now)}` : 'Not updated'
+          }}
+        </button>
         <RouterLink
           to="/settings"
           aria-label="Settings"
@@ -70,6 +97,7 @@ const tabs: { id: Tab; label: string }[] = [
       <TheatreFilter v-if="tab !== 'saved'" class="ml-auto" />
     </nav>
   </header>
+  <RefreshModal :open="refreshOpen" @close="closeRefresh" />
   <p v-if="error" class="mt-3 rounded-lg bg-error/10 p-3 text-sm whitespace-pre-line text-error">
     {{ error }}
   </p>

@@ -55,6 +55,11 @@ export function checkManifest(raw: unknown, folder: string): Manifest {
         !m.titleExtras.every((extra) => typeof extra === 'string' && extra.trim()))
     )
       problems.push(`"titleExtras" must be a list of phrases, e.g. ["Fright Fest", "w/*"]`);
+    if (
+      m.timeoutSeconds !== undefined &&
+      (typeof m.timeoutSeconds !== 'number' || m.timeoutSeconds < 10 || m.timeoutSeconds > 300)
+    )
+      problems.push(`"timeoutSeconds" must be a number from 10 to 300`);
     if (m.enabledByDefault !== undefined && typeof m.enabledByDefault !== 'boolean')
       problems.push(`"enabledByDefault" must be true or false`);
   }

@@ -20,6 +20,8 @@ function filmProblem(f: Record<string, unknown>): string | null {
   if (!optNum(f.imageAspect)) return 'imageAspect not a number';
   if (!optStrs(f.meta) || !optStrs(f.synopsis) || !optStrs(f.flags))
     return 'meta/synopsis/flags not a list of strings';
+  if (f.detailsPending !== undefined && typeof f.detailsPending !== 'boolean')
+    return 'detailsPending not a boolean';
   return null;
 }
 

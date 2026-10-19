@@ -92,6 +92,7 @@ export function parseProduct(product: StoreProduct): Details {
 }
 
 const main: Main = async (ctx) => {
+  ctx.progress('Reading the calendar');
   const events = parseCalendar(await ctx.http.text(CALENDAR_URL));
 
   // First (earliest-listed) calendar title per film, as a fallback name.
@@ -105,6 +106,7 @@ const main: Main = async (ctx) => {
   const cached = ctx.store.get<Record<string, Details>>(DETAILS_KEY) ?? {};
   let details = cached;
   if (ctx.mode === 'foreground' && keys.length) {
+    ctx.progress(`Fetching details for ${keys.length} films`);
     try {
       const url = `${SITE}/wp-json/wc/store/v1/products?include=${keys.join(',')}&per_page=100`;
       const products = await ctx.http.json<StoreProduct[]>(url);

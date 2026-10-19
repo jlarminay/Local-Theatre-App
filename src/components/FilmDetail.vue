@@ -58,63 +58,78 @@ function onStar() {
 </script>
 
 <template>
-  <div class="-mx-4 pb-10">
-    <!-- Wide and square images fill the 16:9 banner (squares lose a little top and
-         bottom); tall posters would lose most of themselves, so they're shown
-         whole over a blurred copy instead. -->
-    <div class="relative overflow-hidden bg-imgbg">
-      <template v-if="film && banner?.image">
-        <img
-          v-if="tall"
-          :src="banner.image"
-          alt=""
-          aria-hidden="true"
-          class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-xl"
-        />
-        <img
-          :src="banner.image"
-          :srcset="banner.imageSrcset"
-          sizes="(min-width: 768px) 768px, 100vw"
-          :alt="film.title"
-          class="fade-img relative aspect-video w-full"
-          :class="tall ? 'object-contain' : 'object-cover'"
-          @load="(event) => (event.target as HTMLElement).classList.add('loaded')"
-        />
-      </template>
-      <div v-else class="aspect-video w-full bg-card" />
-    </div>
-
-    <!-- Pinned to the screen so Back/Save stay reachable while scrolling. The bar
-         itself ignores taps so the page underneath stays usable between the buttons. -->
-    <div
-      class="pointer-events-none fixed inset-x-0 top-0 z-10 mx-auto flex max-w-3xl justify-between px-3 pt-[max(env(safe-area-inset-top),12px)]"
-    >
-      <button
-        class="pointer-events-auto rounded-full border-0 bg-black/60 px-4 py-2 text-white backdrop-blur"
-        @click="goBack"
+  <div class="-mx-4">
+    <!-- The banner and its Back/Fix/Save buttons stay at the top; the details scroll
+         underneath (only matters once the page is taller than the screen). Sticky
+         rather than position: fixed, which would be thrown off by the page's slide-in
+         transform. The buttons' row ignores taps between the buttons. -->
+    <div class="sticky top-0 z-10">
+      <!-- Wide and square images fill the 16:9 banner (squares lose a little top and
+           bottom); tall posters would lose most of themselves, so they're shown
+           whole over a blurred copy instead. -->
+      <div class="relative overflow-hidden bg-imgbg">
+        <template v-if="film && banner?.image">
+          <img
+            v-if="tall"
+            :src="banner.image"
+            alt=""
+            aria-hidden="true"
+            class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-xl"
+          />
+          <img
+            :src="banner.image"
+            :srcset="banner.imageSrcset"
+            sizes="(min-width: 768px) 768px, 100vw"
+            :alt="film.title"
+            class="fade-img relative aspect-video w-full"
+            :class="tall ? 'object-contain' : 'object-cover'"
+            @load="(event) => (event.target as HTMLElement).classList.add('loaded')"
+          />
+        </template>
+        <div v-else class="aspect-video w-full bg-card" />
+      </div>
+      <div
+        class="pointer-events-none absolute inset-x-0 top-0 flex justify-between px-3 pt-[max(env(safe-area-inset-top),12px)]"
       >
-        ← Back
-      </button>
-      <span class="flex gap-2">
         <button
-          v-if="tmdbAvailable && film?.posterLookup"
-          class="pointer-events-auto rounded-full border-0 bg-black/60 px-4 py-2 text-white backdrop-blur"
-          aria-label="Fix the poster match"
-          @click="openFix"
+          class="pointer-events-auto flex items-center gap-1.5 rounded-full border-0 bg-black/60 py-2 pr-4 pl-3 text-white backdrop-blur"
+          @click="goBack"
         >
-          Fix
+          <svg
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M19 12H5m6-6-6 6 6 6" />
+          </svg>
+          Back
         </button>
-        <button
-          v-if="film"
-          class="pointer-events-auto flex items-center gap-1.5 rounded-full border-0 bg-black/60 py-2 pr-4 pl-3 backdrop-blur transition-colors duration-200"
-          :class="isSaved(film) ? 'text-accent' : 'text-white'"
-          :aria-pressed="isSaved(film)"
-          @click="onStar"
-        >
-          <span class="h-5 w-5"><StarIcon :filled="isSaved(film)" /></span>
-          <span class="text-white">{{ isSaved(film) ? 'Saved' : 'Save' }}</span>
-        </button>
-      </span>
+        <span class="flex gap-2">
+          <button
+            v-if="tmdbAvailable && film?.posterLookup"
+            class="pointer-events-auto rounded-full border-0 bg-black/60 px-4 py-2 text-white backdrop-blur"
+            aria-label="Fix the poster match"
+            @click="openFix"
+          >
+            Fix
+          </button>
+          <button
+            v-if="film"
+            class="pointer-events-auto flex items-center gap-1.5 rounded-full border-0 bg-black/60 py-2 pr-4 pl-3 backdrop-blur transition-colors duration-200"
+            :class="isSaved(film) ? 'text-accent' : 'text-white'"
+            :aria-pressed="isSaved(film)"
+            @click="onStar"
+          >
+            <span class="h-5 w-5"><StarIcon :filled="isSaved(film)" /></span>
+            <span class="text-white">{{ isSaved(film) ? 'Saved' : 'Save' }}</span>
+          </button>
+        </span>
+      </div>
     </div>
 
     <FixMatchModal

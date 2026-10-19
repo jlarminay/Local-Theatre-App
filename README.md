@@ -1,16 +1,17 @@
 # Local Theatre
 
-> Formerly **Vic Theatre**. It is being reworked to support several local cinemas through
-> built-in scraper plugins. The last Vic-only release is tagged `vic-v1.0.2`.
+> Formerly **Vic Theatre**. The last Vic-only release is tagged `vic-v1.0.2`.
 
-A personal Android app (Vue + TypeScript + Capacitor) that shows the Victoria Film Theatre's
-schedule in a readable way and sends a notification when a new film is added.
+A personal Android app (Vue + TypeScript + Capacitor) that shows local cinemas' schedules in one
+readable place and sends a notification when a new film is added. Each cinema is a plugin; the
+Vic (Victoria Film Theatre) and Cinecenta are built in.
 
 > **Disclaimer:** This is an unofficial personal project. It is not affiliated with, endorsed by,
-> or connected to the Victoria Film Theatre or the Victoria Film Festival. All theatre names,
-> logos, film titles, posters and descriptions belong to the Victoria Film Festival and the
-> respective film studios. The app reads publicly available information from their website and
-> does not redistribute it.
+> or connected to any of the theatres it lists or the organisations that run them (the Victoria
+> Film Festival, the UVic Students’ Society), or The Movie Database. All theatre names, logos,
+> film titles, posters and descriptions belong to their respective owners, the film studios,
+> distributors and rights holders. The app reads publicly available information from the theatres'
+> websites and does not redistribute it.
 >
 > This code is shared for reference only, for personal and non-commercial use. It is provided
 > "as is", without warranty of any kind. Use it at your own risk; the author is not liable for
@@ -30,15 +31,34 @@ schedule in a readable way and sends a notification when a new film is added.
 - **The app** asks the runner for data with dispatched events (`src/lib/watch.ts`): `refresh` when
   opened (at most hourly) or from Settings, and `state` otherwise. It caches the last answer to
   show instantly on launch.
+- **Combining:** a film on at several theatres is shown once (`src/host/merge.ts`): titles must
+  match after normalising, and after cutting each theatre's `titleExtras`; release years far apart
+  keep them separate. Settings → Combine films turns it off.
 - **In a desktop browser** (`npm run dev`) there's no runner, so the same host runs in the page.
   Sites are fetched through the dev server's `/proxy`, since they send no CORS headers.
 
+## Posters (The Movie Database)
+
+With a TMDB key entered in Settings (each user brings their own free key; it's stored only on the
+device), the app shows TMDB posters in the film grid and TMDB backdrops as film page banners
+(`src/composables/usePosters.ts`, `src/lib/tmdb.ts`). Lookups run in the app, not the runner,
+once per film, and are cached on the device; a miss is retried after a week.
+
+- **Matching:** the title is searched with each theatre's `titleExtras` cut out first, then a few
+  guesses (each side of a dash or colon). A result needs the same title (or the part after a colon,
+  when the years agree) and a release year within two years; the most-voted wins.
+- **Per theatre:** a plugin can opt out with `"posterSource": "theatre"`, and users can choose
+  "Use own images" in a theatre's (i).
+- **Fix:** on a film's page, pick the right TMDB film by hand when the match is wrong, or use the
+  theatre's image. The choice is kept and never looked up again.
+
 ## Background checks
 
-Roughly every 4 hours (`capacitor.config.ts`) the runner runs the plugins in background mode
-(no detail requests), keeps a "first seen" map of film keys, and notifies when an unseen film
-appears. A theatre's first check only records a baseline. Films found by a refresh in the app
-are recorded as seen without an alert.
+Android wakes the runner every hour (`capacitor.config.ts`); it runs a check only when the rate
+chosen in Settings is due (every 1, 3, 6, 12 or 24 hours, or never; `src/host/checks.ts`). A check
+runs the plugins in background mode (no detail requests), keeps a "first seen" map of film keys,
+and notifies when an unseen film appears. A theatre's first check only records a baseline. Films
+found by a refresh in the app are recorded as seen without an alert.
 
 Android may delay runs (Doze, battery optimisation). Settings' **Force check now** and
 **Test notification** buttons trigger the runner immediately for testing.
@@ -49,9 +69,10 @@ Android may delay runs (Doze, battery optimisation). Settings' **Force check now
 npm run dev       # browser at http://localhost:5173 (no background runner / notifications)
 npm run android   # build web + runner, sync, install and launch on a connected phone
 npm run sync      # build + cap sync only (then open/run from Android Studio)
-npm run icons     # regenerate the launcher icon from scripts/make-icon.mjs
-npm test          # plugin tests (saved fixtures, no network)
+npm run icons     # regenerate the icons from scripts/make-icon.mjs
+npm test          # plugin, host and TMDB-matching tests (saved fixtures, no network)
 npm run plugin    # list theatre plugins; `npm run plugin vic` runs one against the live site
+npm run key-qr    # show a TMDB key as a QR code in the terminal, to scan into the phone app
 ```
 
 ## Theatre plugins
@@ -60,19 +81,25 @@ Each theatre is a folder in `plugins/`:
 
 ```text
 plugins/<id>/
-├── manifest.json   # name, tag text and colour, domains it may fetch, enabledByDefault
+├── manifest.json   # name, tag text and colour, domains it may fetch, enabledByDefault, …
 └── index.ts        # export default async function main(ctx) → { films, showtimes }
 ```
 
 Adding a folder is all it takes: the build lists every folder in a generated module
 (`theatrePlugins()` in `plugins/sdk/node.ts`, read by `plugins/sdk/discover.ts`), and fails with a
 clear message if one is broken. `npm run plugin:new <id>` scaffolds one. The contract is in
-`plugins/sdk/types.ts`.
+`plugins/sdk/types.ts`, and `plugins/sdk/manifest.schema.json` gives autocomplete in the manifest.
+
+Optional manifest fields worth knowing:
+
+- `owner`: who runs the theatre, named in the About disclaimer.
+- `titleExtras`: event wording in the theatre's titles (`"Fright Fest"`, `"Director's Cut"`), cut
+  out for poster lookups and combining. A trailing `*` cuts everything after (`"w/*"`).
+- `posterSource`: `"theatre"` to keep the theatre's own images instead of TMDB posters.
 
 A folder whose name starts with `_` is **dev-only**: it's included in `npm run dev` and never in a
-build. `plugins/_sample/` is a made-up theatre with no network access, covering what the Vic doesn't
-(wide and tall images, no image, no seat counts, notes instead of ticket links) for working on the
-multi-theatre UI. Turn theatres on and off in Settings → Theatres.
+build, e.g. a made-up theatre with static data for working on the UI. Turn theatres on and off in
+Settings → Theatres.
 
 Plugins run in the background runner's QuickJS engine, so they can't use the DOM or Node APIs
 (`tsconfig.plugins.json` enforces this). Fetch with `ctx.http` and parse HTML with

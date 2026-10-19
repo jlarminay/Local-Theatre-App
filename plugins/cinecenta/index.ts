@@ -2,7 +2,8 @@
 // REST API: one event per showing, with no film id, so showings are grouped
 // into films by title. The API has no film details, so those come from one
 // event page per film, cached in the store and refreshed every few days
-// (ticket links can appear after a film is first listed).
+// (ticket links can appear after a film is first listed). Background checks
+// fetch pages only for films that have no details yet.
 
 import { decodeEntities, textOf, textsOf } from '../sdk/html.ts';
 import type { Ctx, Film, Main, Showtime } from '../sdk/types.ts';
@@ -11,12 +12,14 @@ const SITE = 'https://www.cinecenta.com';
 const DETAILS_KEY = 'details';
 /** Details older than this are fetched again, a few films per refresh. */
 const DETAILS_MAX_AGE_MS = 3 * 86_400_000;
-const STALE_REFRESHES_PER_RUN = 5;
+const STALE_REFRESHES_PER_RUN = 2;
 /** Event pages fetched at once. */
-const CONCURRENCY = 4;
-// The site is slow (~2–7 s a page), and the host stops a plugin at 60 s. No new
-// page fetches start after this; leftover films get details next refresh.
-const DETAILS_BUDGET_MS = 35_000;
+const CONCURRENCY = 6;
+// The site is slow (~5 s a page, and the phone's runner fetches one at a time),
+// so the manifest gives it a long timeout. A batch only starts if it should end
+// this long before the host's deadline (judged by the previous batch); leftover
+// films are marked detailsPending and fetched on a later run.
+const DEADLINE_MARGIN_MS = 15_000;
 const MAX_PAGES = 10;
 
 type ApiImage = {
@@ -71,6 +74,7 @@ async function fetchEvents(ctx: Ctx): Promise<ApiEvent[]> {
   let url: string | undefined =
     `${SITE}/wp-json/tribe/events/v1/events?per_page=50&start_date=${today()}`;
   for (let page = 0; url && page < MAX_PAGES; page++) {
+    ctx.progress(page ? `Reading the events list (page ${page + 1})` : 'Reading the events list');
     const data: ApiPage = await ctx.http.json<ApiPage>(url);
     if (!Array.isArray(data.events)) throw new Error('Events API returned no events list.');
     events.push(...data.events);
@@ -150,14 +154,20 @@ export function parseEventPage(html: string): Details {
   };
 }
 
-/** Runs `work` over `items`, a few at a time, starting no batch after `deadline`. */
+/**
+ * Runs `work` over `items`, a few at a time. A batch only starts if, taking as
+ * long as the last one did, it would still end before `deadline`.
+ */
 async function inBatches<T>(items: T[], deadline: number, work: (item: T) => Promise<void>) {
-  for (let i = 0; i < items.length && Date.now() < deadline; i += CONCURRENCY)
+  let lastBatchMs = 0;
+  for (let i = 0; i < items.length && Date.now() + lastBatchMs < deadline; i += CONCURRENCY) {
+    const batchStarted = Date.now();
     await Promise.all(items.slice(i, i + CONCURRENCY).map(work));
+    lastBatchMs = Date.now() - batchStarted;
+  }
 }
 
 const main: Main = async (ctx) => {
-  const started = Date.now();
   const events = (await fetchEvents(ctx)).filter((event) => event.title && event.start_date);
 
   // One film per title; its first event supplies the image and the page to read.
@@ -172,14 +182,23 @@ const main: Main = async (ctx) => {
   }
 
   const cache = ctx.store.get<Record<string, Cached>>(DETAILS_KEY) ?? {};
-  if (ctx.mode === 'foreground') {
+  // Films with no details yet are fetched on every run, background checks
+  // included, so leftovers fill in without waiting for the app; refreshing
+  // stale details is left to the app's (foreground) refreshes.
+  {
     const now = Date.now();
     const missing = [...films.keys()].filter((key) => !cache[key]);
-    const stale = [...films.keys()]
-      .filter((key) => cache[key] && now - cache[key].at > DETAILS_MAX_AGE_MS)
-      .sort((a, b) => cache[a].at - cache[b].at)
-      .slice(0, STALE_REFRESHES_PER_RUN);
-    await inBatches([...missing, ...stale], started + DETAILS_BUDGET_MS, async (key) => {
+    const stale =
+      ctx.mode === 'foreground'
+        ? [...films.keys()]
+            .filter((key) => cache[key] && now - cache[key].at > DETAILS_MAX_AGE_MS)
+            .sort((a, b) => cache[a].at - cache[b].at)
+            .slice(0, STALE_REFRESHES_PER_RUN)
+        : [];
+    const toFetch = [...missing, ...stale];
+    let fetched = 0;
+    if (toFetch.length) ctx.progress('Fetching film details', 0, toFetch.length);
+    await inBatches(toFetch, ctx.deadline - DEADLINE_MARGIN_MS, async (key) => {
       try {
         cache[key] = {
           at: now,
@@ -188,6 +207,7 @@ const main: Main = async (ctx) => {
       } catch (err) {
         ctx.log(`Details for "${films.get(key)!.title}" unavailable:`, err);
       }
+      ctx.progress(`Read ${films.get(key)!.title}`, ++fetched, toFetch.length);
     });
   }
   // Keep only current films, so the store doesn't grow forever.
@@ -209,6 +229,8 @@ const main: Main = async (ctx) => {
       ...imageOf(film.first.image),
       meta: details?.meta,
       synopsis: details?.synopsis,
+      // Fetched on a later refresh (time budget, or a page that failed).
+      ...(details ? {} : { detailsPending: true }),
     });
     for (const event of film.events)
       showtimes.push({

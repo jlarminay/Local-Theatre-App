@@ -55,6 +55,31 @@ export type HostState = {
   lastCheck: LastCheck | null;
 };
 
+/** One theatre's line in the refresh progress window. */
+export type TheatreProgress = {
+  id: string;
+  name: string;
+  state: 'waiting' | 'running' | 'done' | 'failed';
+  /** From ctx.progress while running. */
+  step?: string;
+  done?: number;
+  total?: number;
+  startedAt?: number;
+  finishedAt?: number;
+  /** When done: how many films it returned. */
+  films?: number;
+  error?: string;
+  /** Every step and log line so far, oldest first. */
+  steps: { at: number; text: string }[];
+};
+
+/** A refresh as it happens, for the app's progress window. */
+export type RefreshProgress = {
+  startedAt: number;
+  finishedAt?: number;
+  theatres: TheatreProgress[];
+};
+
 export const PLUGIN_TIMEOUT_MS = 60_000;
 const MAX_LOG_LINES = 50;
 
@@ -159,9 +184,17 @@ export function createHost(options: { plugins: Plugin[]; kv: Kv; get: Get; timeo
     };
   }
 
-  async function runOne(plugin: Plugin, mode: Ctx['mode']): Promise<RunInfo> {
+  async function runOne(
+    plugin: Plugin,
+    mode: Ctx['mode'],
+    onStep: (step: string, done?: number, total?: number) => void = () => {},
+    onLog: (line: string) => void = () => {},
+  ): Promise<RunInfo> {
     const { id } = plugin.manifest;
     const started = Date.now();
+    const limitMs = plugin.manifest.timeoutSeconds
+      ? Math.min(plugin.manifest.timeoutSeconds, 300) * 1000
+      : timeoutMs;
     const log: string[] = [];
     const store = read<Record<string, unknown>>(KEYS.store(id), {});
     const ctx: Ctx = {
@@ -177,14 +210,17 @@ export function createHost(options: { plugins: Plugin[]; kv: Kv; get: Get; timeo
         const line = parts.map((p) => (typeof p === 'string' ? p : errorText(p))).join(' ');
         log.push(line);
         if (log.length > MAX_LOG_LINES) log.shift();
+        onLog(line);
         console.log(`[${id}]`, line);
       },
+      progress: onStep,
+      deadline: started + limitMs,
     };
 
     let info: RunInfo;
     try {
       const { result, dropped } = validateResult(
-        await withTimeout(plugin.main(ctx), timeoutMs, plugin.manifest.name),
+        await withTimeout(plugin.main(ctx), limitMs, plugin.manifest.name),
       );
       const prefix = (key: string) => `${id}:${key}`;
       const saved: SavedResult = {
@@ -221,9 +257,56 @@ export function createHost(options: { plugins: Plugin[]; kv: Kv; get: Get; timeo
      */
     async refresh(
       mode: Ctx['mode'],
+      /** Called as the refresh goes: each theatre waiting, running (with its steps), done. */
+      onProgress?: (progress: RefreshProgress) => void,
     ): Promise<{ state: HostState; added: HostFilm[]; runs: Record<string, RunInfo> }> {
       const runs: Record<string, RunInfo> = {};
-      for (const id of enabledIds()) runs[id] = await runOne(byId.get(id)!, mode);
+      const ids = enabledIds();
+      const progress: RefreshProgress = {
+        startedAt: Date.now(),
+        theatres: ids.map((id) => ({
+          id,
+          name: byId.get(id)!.manifest.name,
+          state: 'waiting',
+          steps: [],
+        })),
+      };
+      const emit = () => onProgress?.(JSON.parse(JSON.stringify(progress)));
+      emit();
+      for (const [i, id] of ids.entries()) {
+        const line = progress.theatres[i];
+        Object.assign(line, { state: 'running', startedAt: Date.now() });
+        emit();
+        const addStep = (text: string) => line.steps.push({ at: Date.now(), text });
+        runs[id] = await runOne(
+          byId.get(id)!,
+          mode,
+          (step, done, total) => {
+            // A new step is a new line; the same step with a new count just updates.
+            if (step !== line.step) addStep(step);
+            Object.assign(line, { step, done, total });
+            emit();
+          },
+          (logLine) => {
+            addStep(logLine);
+            emit();
+          },
+        );
+        const run = runs[id];
+        Object.assign(line, {
+          state: run.ok ? 'done' : 'failed',
+          finishedAt: Date.now(),
+          error: run.error,
+          step: undefined,
+          done: undefined,
+          total: undefined,
+        });
+        if (run.ok) line.films = read<SavedResult | null>(KEYS.result(id), null)?.films.length;
+        addStep(run.ok ? `Done · ${line.films ?? 0} films` : `Failed: ${run.error}`);
+        emit();
+      }
+      progress.finishedAt = Date.now();
+      emit();
 
       const next = state();
       const films = next.theatres.filter((t) => runs[t.manifest.id]?.ok).flatMap((t) => t.films);

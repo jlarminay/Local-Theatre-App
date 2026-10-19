@@ -1,9 +1,10 @@
 // Spots the same film listed by more than one theatre, so the app can show it
 // once. Deliberately conservative: titles must match exactly after
 // normalising case, accents, punctuation, "&"/"and", a leading "The/A/An" and
-// a trailing year. Series prefixes ("Fright Fest – Suspiria") are kept, since
-// stripping them is where wrong merges come from. A theatre's own listings
-// are never merged with each other.
+// a trailing year, and cutting the theatre's own event wording (its
+// manifest's titleExtras: "Fright Fest – Suspiria 1977" → "Suspiria").
+// Other prefixes are kept, since guessing at them is where wrong merges come
+// from. A theatre's own listings are never merged with each other.
 //
 // Films whose release years (from meta) are both known and more than
 // YEAR_SLACK apart stay separate: Suspiria 1977 vs 2018. Years in titles
@@ -12,6 +13,34 @@
 // Shining as 1978).
 
 type Mergeable = { key: string; theatre: string; title: string; meta?: string[] };
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const straightQuotes = (text: string) => text.replace(/[’‘]/g, "'");
+
+/**
+ * Cuts a theatre's event wording (its manifest's titleExtras) out of a title:
+ * "Fright Fest" anywhere, or "w/*" — a trailing "*" also cuts everything after.
+ * Leftover separators ("– ", ": ", empty brackets) are tidied away.
+ */
+export function stripExtras(title: string, extras: string[]): string {
+  let result = straightQuotes(title);
+  for (const extra of extras) {
+    const phrase = straightQuotes(extra.trim());
+    if (!phrase || phrase === '*') continue;
+    const rest = phrase.endsWith('*');
+    const words = escapeRegExp(rest ? phrase.slice(0, -1).trim() : phrase);
+    // Whole words only where the phrase starts/ends with a letter ("DUFF", not "DUFFY").
+    const start = /^\w/.test(phrase) ? '\\b' : '';
+    const end = rest ? '.*$' : /\w$/.test(phrase) ? '\\b' : '';
+    result = result.replace(new RegExp(`${start}${words}${end}`, 'gi'), ' ');
+  }
+  return result
+    .replace(/\(\s*\)|\[\s*\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s–—:,-]+|[\s–—:,-]+$/g, '')
+    .replace(/\s+([–—-])\s+[–—-]\s+/g, ' $1 ')
+    .trim();
+}
 
 const YEAR_ONLY = /^\s*(19\d\d|20\d\d)\s*$/;
 const YEAR_SLACK = 2;
@@ -41,10 +70,15 @@ export function filmYear(film: Mergeable): number | null {
  * Groups films that are the same film at different theatres. Each group keeps
  * the input order, and groups are in the order of their first film.
  */
-export function groupFilms<F extends Mergeable>(films: F[]): F[][] {
+export function groupFilms<F extends Mergeable>(
+  films: F[],
+  /** Each film's theatre's titleExtras. */
+  extrasOf: (film: F) => string[] = () => [],
+): F[][] {
   const groups: { title: string; films: F[]; theatres: Set<string>; year: number | null }[] = [];
   for (const film of films) {
-    const title = titleKey(film.title);
+    const extras = extrasOf(film);
+    const title = titleKey(extras.length ? stripExtras(film.title, extras) : film.title);
     const year = filmYear(film);
     const group = title
       ? groups.find(

@@ -12,16 +12,19 @@
     "plugin": "node plugins/sdk/run.ts",
     "plugin:new": "node plugins/sdk/new.ts",
     "icons": "node scripts/make-icon.mjs && capacitor-assets generate --android",
+    "key-qr": "node scripts/key-qr.mjs",
     "sync": "npm run build && cap sync android",
     "android": "npm run sync && cap run android",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "8.2.1",
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",
     "@capacitor/background-runner": "^3.0.0",
     "@capacitor/core": "^8.5.3",
+    "@capacitor/preferences": "8.0.1",
     "dayjs": "^1.11.23",
     "vue": "^3.5.44",
     "vue-router": "^5.4.0"

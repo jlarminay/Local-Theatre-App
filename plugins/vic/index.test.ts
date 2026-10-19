@@ -32,6 +32,8 @@ function fakeCtx(mode: Ctx['mode'], stored: Record<string, unknown> = {}, failDe
     },
     mode,
     log: (...parts) => void logs.push(parts),
+    progress: () => {},
+    deadline: Date.now() + 60_000,
   };
   return { ctx, requested, logs, stored };
 }

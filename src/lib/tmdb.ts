@@ -8,7 +8,9 @@
 // exactly; the release year, when known, has to be close too. No match keeps
 // the theatre's own image rather than guessing.
 
-import { titleKey } from '../host/merge.ts';
+import { stripExtras, titleKey } from '../host/merge.ts';
+
+export { stripExtras };
 
 export type TmdbMovie = {
   id: number;
@@ -34,34 +36,6 @@ export type Get = (
 export const API = 'https://api.themoviedb.org/3';
 const IMAGES = 'https://image.tmdb.org/t/p';
 const YEAR_SLACK = 2;
-
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const straightQuotes = (text: string) => text.replace(/[’‘]/g, "'");
-
-/**
- * Cuts a theatre's event wording (its manifest's titleExtras) out of a title:
- * "Fright Fest" anywhere, or "w/*" — a trailing "*" also cuts everything after.
- * Leftover separators ("– ", ": ", empty brackets) are tidied away.
- */
-export function stripExtras(title: string, extras: string[]): string {
-  let result = straightQuotes(title);
-  for (const extra of extras) {
-    const phrase = straightQuotes(extra.trim());
-    if (!phrase || phrase === '*') continue;
-    const rest = phrase.endsWith('*');
-    const words = escapeRegExp(rest ? phrase.slice(0, -1).trim() : phrase);
-    // Whole words only where the phrase starts/ends with a letter ("DUFF", not "DUFFY").
-    const start = /^\w/.test(phrase) ? '\\b' : '';
-    const end = rest ? '.*$' : /\w$/.test(phrase) ? '\\b' : '';
-    result = result.replace(new RegExp(`${start}${words}${end}`, 'gi'), ' ');
-  }
-  return result
-    .replace(/\(\s*\)|\[\s*\]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^[\s–—:,-]+|[\s–—:,-]+$/g, '')
-    .replace(/\s+([–—-])\s+[–—-]\s+/g, ' $1 ')
-    .trim();
-}
 
 /** Search terms for a listing, most specific first. `extras`: the theatre's titleExtras. */
 export function posterQueries(title: string, extras: string[] = []): string[] {

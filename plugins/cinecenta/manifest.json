@@ -9,7 +9,9 @@
   "updated": "2026-10-18",
   "apiVersion": 1,
   "homepage": "https://www.cinecenta.com/calendar/",
+  "owner": "UVic Students’ Society",
   "domains": ["www.cinecenta.com"],
   "titleExtras": ["DUFF", "w/*", "Presented by*"],
+  "timeoutSeconds": 150,
   "enabledByDefault": false
 }

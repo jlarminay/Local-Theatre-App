@@ -18,6 +18,8 @@
 - Posters and banner stills from The Movie Database with your own TMDB key (Settings → TMDB key); a theatre can use its own images instead
 - Films page uses poster-shaped (2:3) tiles
 - Fix on a film's page: pick the right TMDB film when the poster match is wrong
+- Tap "Updated …" in the header to see an update as it happens: each theatre's current step, progress and time
+- Scan the TMDB key from a QR code (`npm run key-qr` shows one on the computer)
 - Background check rate is now a setting: every 1, 3, 6, 12 or 24 hours, or never (default 3 hours)
 
 ## [1.0.2] - 2026-10-16

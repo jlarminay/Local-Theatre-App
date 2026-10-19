@@ -55,6 +55,13 @@
       "items": { "type": "string", "minLength": 1 },
       "description": "Event wording cut out of titles when looking films up on The Movie Database, e.g. [\"Fright Fest\", \"Director's Cut\", \"w/*\"]. A trailing * also cuts everything after."
     },
+    "timeoutSeconds": {
+      "type": "number",
+      "minimum": 10,
+      "maximum": 300,
+      "default": 60,
+      "description": "How long a run may take before the host stops it. For slow sites."
+    },
     "enabledByDefault": {
       "type": "boolean",
       "default": true,

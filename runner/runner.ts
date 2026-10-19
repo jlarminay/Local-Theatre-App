@@ -162,8 +162,19 @@ on('checkSchedule', async (args: { force?: boolean }): Promise<LastCheck | { ski
 });
 
 // The app's refresh. Films found here are on screen, so they're recorded as
-// seen without an alert.
-on('refresh', async (): Promise<HostState> => (await host.refresh('foreground')).state);
+// seen without an alert. Progress goes into the KV store as it happens; the app
+// reads it from there (src/lib/watch.ts) for its progress window, since it
+// can't hear from this event until it finishes.
+export const PROGRESS_KEY = 'refreshProgress';
+on(
+  'refresh',
+  async (): Promise<HostState> =>
+    (
+      await host.refresh('foreground', (progress) =>
+        runner.CapacitorKV.set(PROGRESS_KEY, JSON.stringify(progress)),
+      )
+    ).state,
+);
 
 // Saved results, first-seen dates and the last check, without fetching.
 on('state', (): HostState => host.state());

@@ -1,8 +1,9 @@
 import { BackgroundRunner } from '@capacitor/background-runner';
 import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 
 import { DEFAULT_CHECK_RATE, isCheckRate, type CheckRate } from '../host/checks';
-import type { Host, HostState, Kv, LastCheck } from '../host/host';
+import type { Host, HostState, Kv, LastCheck, RefreshProgress } from '../host/host';
 
 // The app's line to the theatre plugins. On the phone they run only in the
 // background runner (runner/runner.ts), which also owns their saved state, so
@@ -10,7 +11,7 @@ import type { Host, HostState, Kv, LastCheck } from '../host/host';
 // there's no runner: the same host runs in the page, with localStorage and the
 // dev server's /proxy (the sites send no CORS headers).
 
-export type { HostState, LastCheck };
+export type { HostState, LastCheck, RefreshProgress };
 export const RUNNER_LABEL = 'com.joshlarminay.localtheatre.check';
 
 const native = Capacitor.isNativePlatform();
@@ -59,10 +60,43 @@ function browserHost(): Promise<Host> {
   return webHost;
 }
 
-/** Runs every enabled theatre now and returns the new state. */
-export async function refreshTheatres(): Promise<HostState> {
-  if (native) return dispatch('refresh');
-  return (await (await browserHost()).refresh('foreground')).state;
+// The runner's KV store is an Android SharedPreferences file named after its
+// label, so Preferences pointed at that "group" reads it directly — without
+// another runner event, which would wait until the refresh finished.
+const PROGRESS_KEY = 'refreshProgress'; // runner/runner.ts
+const PROGRESS_POLL_MS = 500;
+let preferencesReady: Promise<void> | null = null;
+
+async function readProgress(): Promise<RefreshProgress | null> {
+  preferencesReady ??= Preferences.configure({ group: RUNNER_LABEL });
+  await preferencesReady;
+  const { value } = await Preferences.get({ key: PROGRESS_KEY });
+  try {
+    return value ? (JSON.parse(value) as RefreshProgress) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Runs every enabled theatre now and returns the new state; `onProgress` follows along. */
+export async function refreshTheatres(
+  onProgress?: (progress: RefreshProgress) => void,
+): Promise<HostState> {
+  if (!native) return (await (await browserHost()).refresh('foreground', onProgress)).state;
+  if (!onProgress) return dispatch('refresh');
+
+  const started = Date.now();
+  // Ignore what an earlier refresh left behind.
+  const report = (progress: RefreshProgress | null) => {
+    if (progress && progress.startedAt >= started - 1000) onProgress(progress);
+  };
+  const poll = setInterval(() => readProgress().then(report, () => {}), PROGRESS_POLL_MS);
+  try {
+    return await dispatch<HostState>('refresh');
+  } finally {
+    clearInterval(poll);
+    await readProgress().then(report, () => {});
+  }
 }
 
 /** Saved results (including any from background checks), without fetching. */
