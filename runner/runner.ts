@@ -1,5 +1,6 @@
 // Background runner: runs in Capacitor's headless JS engine (QuickJS: no DOM,
-// no web view, no plugins), roughly every 4 hours per capacitor.config.ts, and
+// no web view, no plugins). Android wakes it hourly (capacitor.config.ts) and
+// it checks at the rate chosen in Settings (src/host/checks.ts); it also runs
 // whenever the app dispatches an event. Bundled to dist/runners/runner.js by
 // vite.runner.config.ts, theatre plugins included.
 //

@@ -84,6 +84,31 @@ function automatic() {
       </p>
 
       <ul class="m-0 flex list-none flex-col gap-1 p-0">
+        <!-- For events that aren't films (a talent show, a concert): never match. -->
+        <li>
+          <button
+            class="flex w-full items-center gap-3 rounded-lg border-0 bg-transparent p-1.5 text-left text-ink active:bg-border-1"
+            @click="choose(null)"
+          >
+            <span
+              class="grid h-[69px] w-[46px] shrink-0 place-items-center rounded border border-dashed border-border-2 text-[20px] text-muted-1"
+              aria-hidden="true"
+              >∅</span
+            >
+            <span class="min-w-0 flex-1">
+              <span class="block text-[14px] font-medium">No match</span>
+              <span class="block text-[12px] text-muted-1">
+                Not a film on TMDB; use the theatre's image
+              </span>
+            </span>
+            <span
+              v-if="match?.manual && !match.path"
+              class="shrink-0 rounded bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent"
+            >
+              Current
+            </span>
+          </button>
+        </li>
         <li v-for="movie in results" :key="movie.id">
           <button
             class="flex w-full items-center gap-3 rounded-lg border-0 bg-transparent p-1.5 text-left text-ink active:bg-border-1"
@@ -114,15 +139,8 @@ function automatic() {
         </li>
       </ul>
 
-      <div class="flex flex-col items-start gap-2 border-t border-border-1 pt-3">
-        <button class="border-0 bg-transparent p-0 text-[13px] text-accent" @click="choose(null)">
-          Use the theatre's image
-        </button>
-        <button
-          v-if="match?.manual"
-          class="border-0 bg-transparent p-0 text-[13px] text-accent"
-          @click="automatic"
-        >
+      <div v-if="match?.manual" class="border-t border-border-1 pt-3">
+        <button class="border-0 bg-transparent p-0 text-[13px] text-accent" @click="automatic">
           Back to automatic
         </button>
       </div>

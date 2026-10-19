@@ -26,7 +26,15 @@ export type TmdbMovie = {
 };
 
 /** What a lookup finds: image paths ("/abc.jpg") on TMDB's image server. */
-export type Found = { poster: string; backdrop: string | null };
+export type Found = { id: number; poster: string; backdrop: string | null };
+
+/** The facts used to fill gaps in a theatre's listing. */
+export type TmdbDetails = {
+  year: number | null;
+  runtime: number | null;
+  genres: string[];
+  overview: string;
+};
 
 export type Get = (
   url: string,
@@ -89,11 +97,8 @@ function titleFit(movie: TmdbMovie, wanted: string, yearKnown: boolean): number 
  * little wrong (Cinecenta's "1978" Shining), and an obscure film of the same
  * name and year would otherwise beat the famous one.
  */
-export function pickMovie(
-  results: TmdbMovie[],
-  query: string,
-  year: number | null,
-): TmdbMovie | null {
+/** Every result that fits `query` (see titleFit) and `year`, best first: fit, then votes, then popularity. */
+export function rankMovies(results: TmdbMovie[], query: string, year: number | null): TmdbMovie[] {
   const wanted = titleKey(query);
   const scored = results.flatMap((movie) => {
     if (!movie.poster_path) return [];
@@ -108,8 +113,40 @@ export function pickMovie(
       (b.movie.vote_count ?? 0) - (a.movie.vote_count ?? 0) ||
       (b.movie.popularity ?? 0) - (a.movie.popularity ?? 0),
   );
-  return scored[0]?.movie ?? null;
+  return scored.map(({ movie }) => movie);
 }
+
+export function pickMovie(
+  results: TmdbMovie[],
+  query: string,
+  year: number | null,
+): TmdbMovie | null {
+  return rankMovies(results, query, year)[0] ?? null;
+}
+
+/** "Paweł Pawlikowski" and "Pawel Pawlikowski" alike. */
+const personKey = (name: string) =>
+  name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ł/g, 'l')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim();
+
+/** "Jillian Frank & Avalon Fast" → each name. */
+export const directorNames = (text: string) =>
+  text
+    .split(/\s*(?:,|&|\band\b|\/)\s*/i)
+    .map(personKey)
+    .filter(Boolean);
+
+/**
+ * How many candidates' credits to check against the theatre's director. Only
+ * when several films fit the title (and year); stops at the first match; the
+ * result is cached, so this is a few requests per ambiguous film, once.
+ */
+const DIRECTOR_CHECKS = 3;
 
 /** A v4 "API Read Access Token" goes in a header; a v3 API key goes in the URL. */
 function authorise(url: string, key: string): { url: string; headers: Record<string, string> } {
@@ -141,23 +178,98 @@ export async function searchMovies(get: Get, key: string, query: string): Promis
   return (JSON.parse(response.text) as { results?: TmdbMovie[] }).results ?? [];
 }
 
+async function directorsOf(get: Get, key: string, id: number): Promise<string[]> {
+  const request = authorise(`${API}/movie/${id}/credits?`, key);
+  const response = await get(request.url, request.headers);
+  if (response.status < 200 || response.status >= 300) return [];
+  const { crew } = JSON.parse(response.text) as { crew?: { job?: string; name?: string }[] };
+  return (crew ?? []).filter((c) => c.job === 'Director' && c.name).map((c) => personKey(c.name!));
+}
+
+/**
+ * The poster and backdrop for a listing, or null when nothing matches. Throws
+ * on API errors. With the theatre's `director`, several films sharing a title
+ * ("Fatherland") are told apart by their credits; if none of them lists that
+ * director, the best match by votes stands.
+ */
 export async function findMovie(
   get: Get,
   key: string,
   title: string,
   year: number | null,
   extras: string[] = [],
+  director?: string,
 ): Promise<Found | null> {
+  const wanted = director ? directorNames(director) : [];
   for (const query of posterQueries(title, extras)) {
-    const movie = pickMovie(await searchMovies(get, key, query), query, year);
-    if (movie?.poster_path)
-      return { poster: movie.poster_path, backdrop: movie.backdrop_path ?? null };
+    const ranked = rankMovies(await searchMovies(get, key, query), query, year);
+    if (!ranked.length) continue;
+    let movie = ranked[0];
+    if (wanted.length && ranked.length > 1) {
+      for (const candidate of ranked.slice(0, DIRECTOR_CHECKS)) {
+        const directors = await directorsOf(get, key, candidate.id);
+        if (directors.some((name) => wanted.includes(name))) {
+          movie = candidate;
+          break;
+        }
+      }
+    }
+    return { id: movie.id, poster: movie.poster_path!, backdrop: movie.backdrop_path ?? null };
   }
   return null;
 }
 
 /** A small poster for lists of search results. */
 export const posterThumb = (path: string) => `${IMAGES}/w92${path}`;
+
+/** One film's details: release year, runtime, genres and overview. */
+export async function fetchDetails(get: Get, key: string, id: number): Promise<TmdbDetails> {
+  const request = authorise(`${API}/movie/${id}?`, key);
+  const response = await get(request.url, request.headers);
+  if (response.status < 200 || response.status >= 300)
+    throw new Error(`TMDB returned ${response.status}`);
+  const movie = JSON.parse(response.text) as {
+    release_date?: string;
+    runtime?: number;
+    genres?: { name?: string }[];
+    overview?: string;
+  };
+  return {
+    year: Number(movie.release_date?.slice(0, 4)) || null,
+    runtime: movie.runtime || null,
+    genres: (movie.genres ?? []).flatMap((g) => (g.name ? [g.name] : [])),
+    overview: movie.overview?.trim() ?? '',
+  };
+}
+
+const GENRES_SHOWN = 2;
+
+/**
+ * Fills gaps in a theatre's meta line and synopsis from TMDB, never replacing
+ * what the theatre gave: the year and runtime when it has none, two genres
+ * unless it already names one of TMDB's, and the overview when it has no
+ * description.
+ */
+export function fillFromTmdb(
+  meta: string[] | undefined,
+  synopsis: string[] | undefined,
+  details: TmdbDetails | null | undefined,
+): { meta: string[] | undefined; synopsis: string[] | undefined } {
+  if (!details) return { meta, synopsis };
+  const items = [...(meta ?? [])];
+  const lower = items.map((item) => item.toLowerCase());
+  const genres = details.genres.map((g) => g.toLowerCase());
+  if (genres.length && !lower.some((item) => genres.includes(item)))
+    items.push(...details.genres.slice(0, GENRES_SHOWN));
+  if (details.year && !items.some((item) => /^\s*(19|20)\d\d\s*$/.test(item)))
+    items.push(String(details.year));
+  if (details.runtime && !items.some((item) => /\d+\s*min/i.test(item)))
+    items.push(`${details.runtime} min`);
+  return {
+    meta: items.length ? items : undefined,
+    synopsis: synopsis?.length ? synopsis : details.overview ? [details.overview] : synopsis,
+  };
+}
 
 /** Image URLs for a backdrop path. TMDB backdrops are 16:9. */
 export function backdropImages(path: string) {

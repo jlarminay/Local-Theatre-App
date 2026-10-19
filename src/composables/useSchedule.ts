@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 
 import type { FirstSeen, HostFilm, HostShowtime, HostState, RefreshProgress } from '../host/host';
 import { filmYear, groupFilms } from '../host/merge';
+import { fillFromTmdb } from '../lib/tmdb';
 import { clearTheatreData, loadState, refreshTheatres, setEnabledTheatres } from '../lib/watch';
 import { usePosters, type Backdrop, type Lookup, type Poster } from './usePosters';
 
@@ -152,7 +153,7 @@ function setCombineFilms(on: boolean) {
   }
 }
 
-const { usesDatabase, cachedImages, requestPosters, tmdbAvailable } = usePosters();
+const { usesDatabase, cachedMatch, requestPosters, tmdbAvailable } = usePosters();
 
 const detailScore = (film: HostFilm) =>
   (film.image ? 2 : 0) + (film.synopsis?.length ? 1 : 0) + (film.meta?.length ? 1 : 0);
@@ -180,22 +181,26 @@ function combine(members: HostFilm[], showtimes: Showtime[], firstSeen: FirstSee
         year: [main, ...rest].map(filmYear).find((y) => y !== null) ?? null,
         // The main listing's theatre's wording to cut (its title is the one searched).
         extras: theatreOf(main.theatre)?.titleExtras ?? [],
+        director: [main, ...rest].find((film) => film.director)?.director,
       }
     : undefined;
+  const { details, ...tmdbPart } = lookup ? cachedMatch(lookup) : {};
+  // TMDB only fills what the theatres left out (see fillFromTmdb).
+  const filled = fillFromTmdb(fill('meta'), fill('synopsis'), details);
   return {
     ...main,
     image: withImage?.image,
     imageSrcset: withImage?.imageSrcset,
     imageAspect: withImage?.imageAspect,
-    meta: fill('meta'),
-    synopsis: fill('synopsis'),
+    meta: filled.meta,
+    synopsis: filled.synopsis,
     flags: fill('flags'),
     keys: members.map((film) => film.key),
     theatres: members.map((film) => film.theatre),
     links: members.flatMap((film) => (film.url ? [{ theatre: film.theatre, url: film.url }] : [])),
     showtimes,
     isNew: seen.every(Boolean) && Date.now() - Math.min(...seen) < NEW_FOR_MS,
-    ...(lookup && cachedImages(lookup)),
+    ...tmdbPart,
     posterLookup: lookup,
   };
 }

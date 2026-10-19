@@ -41,7 +41,7 @@ type ApiEvent = {
 type ApiPage = { events?: ApiEvent[]; next_rest_url?: string };
 
 /** What an event page adds to a film. */
-export type Details = Pick<Film, 'meta' | 'synopsis'> & {
+export type Details = Pick<Film, 'meta' | 'synopsis' | 'director'> & {
   /** Online ticket link, when the event sells them (Eventbrite etc.). */
   bookUrl?: string;
   /** True when the page says there are no online sales (pay at the door). */
@@ -149,6 +149,7 @@ export function parseEventPage(html: string): Details {
   return {
     meta,
     synopsis,
+    director: textOf(byClass(metaHtml, 'span', 'director') ?? '') || undefined,
     bookUrl: bookUrl ? decodeEntities(bookUrl) : undefined,
     atTheDoor: /no online ticket sales/i.test(tickets),
   };
@@ -229,6 +230,7 @@ const main: Main = async (ctx) => {
       ...imageOf(film.first.image),
       meta: details?.meta,
       synopsis: details?.synopsis,
+      director: details?.director,
       // Fetched on a later refresh (time budget, or a page that failed).
       ...(details ? {} : { detailsPending: true }),
     });

@@ -94,6 +94,12 @@ export interface Film {
   /** Highlighted notes, e.g. "Membership required". */
   flags?: string[];
   /**
+   * The director(s), as listed ("Jillian Frank & Avalon Fast"), when the site
+   * gives them. Used to tell films apart on The Movie Database; show it in
+   * `meta` too if it should be displayed.
+   */
+  director?: string;
+  /**
    * True while the plugin hasn't fetched this film's details yet but will on
    * a later refresh (e.g. a time budget ran out). The app holds poster
    * lookups until then, since the details carry the release year.

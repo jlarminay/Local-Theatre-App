@@ -1,10 +1,8 @@
 # Local Theatre
 
-> Formerly **Vic Theatre**. The last Vic-only release is tagged `vic-v1.0.2`.
-
 A personal Android app (Vue + TypeScript + Capacitor) that shows local cinemas' schedules in one
 readable place and sends a notification when a new film is added. Each cinema is a plugin; the
-Vic (Victoria Film Theatre) and Cinecenta are built in.
+Vic (Victoria Film Theatre), Cinecenta, the Roxy and Capitol 6 are built in.
 
 > **Disclaimer:** This is an unofficial personal project. It is not affiliated with, endorsed by,
 > or connected to any of the theatres it lists or the organisations that run them (the Victoria
@@ -24,6 +22,8 @@ Vic (Victoria Film Theatre) and Cinecenta are built in.
   which embeds its events as JSON, and its posters and synopses from WooCommerce's public Store
   API, in one request for all films. Cinecenta's showtimes come from The Events Calendar's public
   REST API, and its details from one event page per film (cached, refreshed every few days).
+  The Roxy and Capitol 6 both run on CinemaHosting (`plugins/sdk/cinemahosting.ts`): the
+  homepage lists every film, and each film's page has its details and showtimes.
 - **The background runner** (`runner/runner.ts`, Capacitor's headless QuickJS engine) is the only
   place plugins run on the phone. The plugin host (`src/host/host.ts`) runs the enabled ones in
   order, keeps each theatre's last good result if a run fails, and stores everything in the
@@ -42,11 +42,14 @@ Vic (Victoria Film Theatre) and Cinecenta are built in.
 With a TMDB key entered in Settings (each user brings their own free key; it's stored only on the
 device), the app shows TMDB posters in the film grid and TMDB backdrops as film page banners
 (`src/composables/usePosters.ts`, `src/lib/tmdb.ts`). Lookups run in the app, not the runner,
-once per film, and are cached on the device; a miss is retried after a week.
+once per film, and are cached on the device; a miss is retried after a week. A match also fills
+gaps in the theatre's listing (release year, runtime, genres, or an overview when there's no
+description), never replacing what the theatre gave.
 
 - **Matching:** the title is searched with each theatre's `titleExtras` cut out first, then a few
   guesses (each side of a dash or colon). A result needs the same title (or the part after a colon,
-  when the years agree) and a release year within two years; the most-voted wins.
+  when the years agree) and a release year within two years; the most-voted wins, unless the
+  plugin gave a `director` and another candidate's credits match it.
 - **Per theatre:** a plugin can opt out with `"posterSource": "theatre"`, and users can choose
   "Use own images" in a theatre's (i).
 - **Fix:** on a film's page, pick the right TMDB film by hand when the match is wrong, or use the

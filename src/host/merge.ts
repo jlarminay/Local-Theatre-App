@@ -35,10 +35,11 @@ export function stripExtras(title: string, extras: string[]): string {
     result = result.replace(new RegExp(`${start}${words}${end}`, 'gi'), ' ');
   }
   return result
-    .replace(/\(\s*\)|\[\s*\]/g, ' ')
+    .replace(/\(\s*(?:(?:19|20)\d\d)?\s*\)|\[\s*\]/g, ' ') // empty, or just a year: "(2026 )"
     .replace(/\s+/g, ' ')
     .replace(/^[\s–—:,-]+|[\s–—:,-]+$/g, '')
     .replace(/\s+([–—-])\s+[–—-]\s+/g, ' $1 ')
+    .replace(/\s+[–—-]\s+(?=\()/g, ' ') // "Spirited Away - (Subtitled)"
     .trim();
 }
 
