@@ -30,6 +30,7 @@ test('capitol6: the shared CinemaHosting reader works on its site', async () => 
     log: () => {},
     progress: () => {},
     deadline: Date.now() + 60_000,
+    key: () => undefined,
   };
   const { result, dropped } = validateResult(await main(ctx));
   assert.deepEqual(dropped, []);

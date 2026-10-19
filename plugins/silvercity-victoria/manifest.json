@@ -1,0 +1,22 @@
+{
+  "$schema": "../sdk/manifest.schema.json",
+  "id": "silvercity-victoria",
+  "name": "SilverCity Victoria",
+  "shortName": "SCV",
+  "color": "#1e6fd9",
+  "version": "1.0.0",
+  "author": "Josh Larminay",
+  "updated": "2026-10-18",
+  "apiVersion": 1,
+  "homepage": "https://www.cineplex.com/theatre/silvercity-victoria-cinemas",
+  "owner": "Cineplex",
+  "domains": ["apis.cineplex.com"],
+  "keys": [
+    {
+      "name": "cineplex",
+      "label": "Cineplex key",
+      "help": "The key cineplex.com's own pages send. Open cineplex.com and search its scripts for \"ocpApimSubscriptionKey\". For personal use only."
+    }
+  ],
+  "enabledByDefault": false
+}

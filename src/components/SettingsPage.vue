@@ -18,6 +18,7 @@ import {
   checkRate,
   ensureNotificationPermission,
   notificationPermission,
+  pluginKeys,
   testNotification,
   type NotificationPermission,
 } from '../lib/watch';
@@ -132,21 +133,66 @@ const onToggleTheatre = (id: string, on: boolean) =>
 const route = useRoute();
 const router = useRouter();
 /** 'schedule', 'alerts', 'changelog', or 'theatre:<id>' for a theatre's info. */
-type Modal = 'schedule' | 'alerts' | 'changelog' | 'tmdb-key' | `theatre:${string}`;
+type Modal =
+  'schedule' | 'alerts' | 'changelog' | 'tmdb-key' | `key:${string}` | `theatre:${string}`;
 const openModal = computed(() => route.query.info as Modal | undefined);
 // Per-theatre poster choice, in the theatre's info. Saved as soon as it's picked.
 const { tmdbAvailable, keyHint, saveKey, removeKey, imageChoice, setImageChoice, lookupError } =
   usePosters();
 
-// The TMDB key modal. The key is write-only: the field always starts empty,
+// Keys plugins need (manifest "keys"), once each, with the theatres that use
+// them; and hints ("…a1b") for those that are set. Kept by the runner.
+const pluginKeyHints = ref<Record<string, string>>({});
+onMounted(async () => {
+  try {
+    pluginKeyHints.value = await pluginKeys();
+  } catch {
+    // runner unavailable — rows show "Add key"
+  }
+});
+const pluginKeySpecs = computed(() => {
+  const specs = new Map<
+    string,
+    { name: string; label: string; help?: string; theatres: string[] }
+  >();
+  for (const { manifest } of theatres.value)
+    for (const key of manifest.keys ?? []) {
+      const spec = specs.get(key.name) ?? { ...key, theatres: [] };
+      spec.theatres.push(manifest.name);
+      specs.set(key.name, spec);
+    }
+  return [...specs.values()];
+});
+/** Which key the key window is for: TMDB's, or a plugin's. */
+const keyTarget = computed(() => {
+  const info = openModal.value;
+  if (info === 'tmdb-key') return { kind: 'tmdb' as const, label: 'TMDB key' };
+  if (!info?.startsWith('key:')) return null;
+  const spec = pluginKeySpecs.value.find((k) => k.name === info.slice('key:'.length));
+  return spec ? { kind: 'plugin' as const, ...spec } : null;
+});
+const targetHint = computed(() =>
+  keyTarget.value?.kind === 'plugin'
+    ? (pluginKeyHints.value[keyTarget.value.name] ?? '')
+    : keyHint.value,
+);
+async function removePluginKey(name: string) {
+  try {
+    pluginKeyHints.value = await pluginKeys(name, null);
+  } catch (err) {
+    message.value = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+// The key modal. The key is write-only: the field always starts empty,
 // and saving replaces whatever was set before.
 const keyInput = ref('');
 const keyError = ref('');
 const keySaving = ref(false);
-function openKeyModal() {
+function openKeyModal(which: 'tmdb-key' | `key:${string}` = 'tmdb-key') {
   keyInput.value = '';
   keyError.value = '';
-  openInfo('tmdb-key');
+  openInfo(which);
 }
 // Bringing the key over from a computer: scan it from a QR code instead of typing.
 const keyScanStatus = ref('');
@@ -166,7 +212,19 @@ async function onSaveKey() {
   keySaving.value = true;
   keyError.value = '';
   try {
-    await saveKey(keyInput.value);
+    const target = keyTarget.value;
+    if (target?.kind === 'plugin') {
+      pluginKeyHints.value = await pluginKeys(target.name, keyInput.value.trim());
+      // Try it straight away, if a theatre that uses it is on.
+      if (
+        theatres.value.some(
+          (t) => t.enabled && t.manifest.keys?.some((k) => k.name === target.name),
+        )
+      )
+        refresh();
+    } else {
+      await saveKey(keyInput.value);
+    }
     keyInput.value = '';
     closeInfo();
   } catch (err) {
@@ -231,7 +289,9 @@ const onTest = () =>
   run(async () => {
     // Any current film makes a realistic example.
     const film = films.value[Math.floor(Math.random() * films.value.length)];
-    const example = film ? { title: film.title, theatre: film.theatre } : null;
+    const example = film
+      ? { title: film.title, theatre: film.theatre, starts: film.showtimes.map((s) => s.start) }
+      : null;
     await testNotification(example ? [example] : []);
     return `Sent a sample alert for "${example?.title ?? 'A new film'}" — check your notifications.`;
   });
@@ -311,11 +371,40 @@ const onClear = () =>
                 <button class="settings-button whitespace-nowrap" @click="removeKey">
                   Remove key
                 </button>
-                <button class="settings-button whitespace-nowrap" @click="openKeyModal">
+                <button class="settings-button whitespace-nowrap" @click="openKeyModal()">
                   Add another
                 </button>
               </template>
-              <button v-else class="settings-button whitespace-nowrap" @click="openKeyModal">
+              <button v-else class="settings-button whitespace-nowrap" @click="openKeyModal()">
+                Add key
+              </button>
+            </dd>
+          </div>
+          <div v-for="spec in pluginKeySpecs" :key="spec.name" class="items-center">
+            <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+              <span class="text-[14px]">{{ spec.label }}</span>
+              <span class="text-[12px] text-muted-1">Used by {{ spec.theatres.join(', ') }}</span>
+            </dt>
+            <dd class="flex flex-wrap gap-2">
+              <template v-if="pluginKeyHints[spec.name]">
+                <button
+                  class="settings-button whitespace-nowrap"
+                  @click="removePluginKey(spec.name)"
+                >
+                  Remove key
+                </button>
+                <button
+                  class="settings-button whitespace-nowrap"
+                  @click="openKeyModal(`key:${spec.name}`)"
+                >
+                  Add another
+                </button>
+              </template>
+              <button
+                v-else
+                class="settings-button whitespace-nowrap"
+                @click="openKeyModal(`key:${spec.name}`)"
+              >
                 Add key
               </button>
             </dd>
@@ -655,9 +744,12 @@ const onClear = () =>
       <template #close>Close</template>
     </BaseModal>
 
-    <BaseModal :open="openModal === 'tmdb-key'" title="TMDB key" @close="closeInfo">
+    <BaseModal :open="Boolean(keyTarget)" :title="keyTarget?.label ?? ''" @close="closeInfo">
       <form class="flex flex-col gap-3 text-[13px] text-muted-2" @submit.prevent="onSaveKey">
-        <p class="m-0 leading-relaxed">
+        <p v-if="keyTarget?.kind === 'plugin'" class="m-0 leading-relaxed">
+          {{ keyTarget.help ?? 'A key this theatre needs.' }} It's kept only on this device.
+        </p>
+        <p v-else class="m-0 leading-relaxed">
           Posters can come from The Movie Database. It needs your own free key: sign up at
           <a
             href="https://www.themoviedb.org/settings/api"
@@ -669,8 +761,8 @@ const onClear = () =>
           and paste the <strong class="text-ink">API Key</strong> or
           <strong class="text-ink">API Read Access Token</strong>. It's kept only on this device.
         </p>
-        <p v-if="keyHint" class="m-0">
-          A key ending <span class="font-mono text-ink">{{ keyHint }}</span> is set. Saving a new
+        <p v-if="targetHint" class="m-0">
+          A key ending <span class="font-mono text-ink">{{ targetHint }}</span> is set. Saving a new
           one replaces it.
         </p>
         <div class="flex gap-2">
@@ -679,8 +771,8 @@ const onClear = () =>
             type="password"
             autocomplete="off"
             spellcheck="false"
-            :placeholder="keyHint ? 'New key' : 'Key'"
-            aria-label="TMDB key"
+            :placeholder="targetHint ? 'New key' : 'Key'"
+            :aria-label="keyTarget?.label ?? 'Key'"
             class="min-w-0 flex-1 rounded-lg border border-border-2 bg-paper px-3 py-2 font-mono text-[13px] text-ink"
           />
           <button
@@ -723,7 +815,7 @@ const onClear = () =>
             :disabled="keySaving || !keyInput.trim()"
             @click="onSaveKey"
           >
-            {{ keySaving ? 'Checking…' : 'Save' }}
+            {{ keySaving ? (keyTarget?.kind === 'tmdb' ? 'Checking…' : 'Saving…') : 'Save' }}
           </button>
         </div>
       </template>
@@ -827,6 +919,8 @@ const onClear = () =>
 .changelog :deep(ul) {
   margin: 0 0 0.5rem;
   padding-left: 1.1rem;
+  /* Tailwind's reset removes list markers. */
+  list-style-type: '- ';
 }
 .changelog :deep(li) {
   margin: 0.15rem 0;

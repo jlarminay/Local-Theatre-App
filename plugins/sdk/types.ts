@@ -47,15 +47,26 @@ export interface Manifest {
    * max 300). For slow sites; the user waits on in-app refreshes, so keep it modest.
    */
   timeoutSeconds?: number;
+  /**
+   * Keys the user must supply, entered in Settings and kept only on the
+   * device (never in the plugin's code). Plugins sharing a key use the same
+   * `name`. Read with ctx.key(name).
+   */
+  keys?: { name: string; label: string; help?: string }[];
   /** Whether it's switched on for a fresh install. Default true. */
   enabledByDefault?: boolean;
+}
+
+export interface RequestOptions {
+  /** Extra request headers, e.g. an API key a site's own pages send. */
+  headers?: Record<string, string>;
 }
 
 export interface Ctx {
   http: {
     /** GET, resolving to the body. Rejects on a non-2xx status or a host not in `domains`. */
-    text(url: string): Promise<string>;
-    json<T = unknown>(url: string): Promise<T>;
+    text(url: string, options?: RequestOptions): Promise<string>;
+    json<T = unknown>(url: string, options?: RequestOptions): Promise<T>;
   };
   /** Small per-plugin storage kept between runs (JSON values only). */
   store: {
@@ -76,6 +87,8 @@ export interface Ctx {
   progress(step: string, done?: number, total?: number): void;
   /** When the host will stop this run (epoch ms): budget slow work against it. */
   deadline: number;
+  /** A key from the manifest's `keys`, as the user entered it in Settings; undefined if not set. */
+  key(name: string): string | undefined;
 }
 
 export interface Film {

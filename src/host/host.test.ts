@@ -151,6 +151,32 @@ describe('host', () => {
     assert.ok(deadline >= before + 119_000 && deadline <= Date.now() + 120_000);
   });
 
+  test('plugin keys: only declared ones are readable; hints never show the key', async () => {
+    const seen: (string | undefined)[] = [];
+    const host = createHost({
+      kv: memoryKv(),
+      get,
+      plugins: [
+        plugin(
+          'aaa',
+          async (ctx) => {
+            seen.push(ctx.key('cineplex'), ctx.key('other'));
+            return lineup('One');
+          },
+          { keys: [{ name: 'cineplex', label: 'Cineplex key' }] },
+        ),
+      ],
+    });
+    assert.deepEqual(host.keyHints(), {});
+    host.setKey('cineplex', '  abcdef123  ');
+    host.setKey('other', 'secret');
+    assert.deepEqual(host.keyHints(), { cineplex: '…123' });
+    await host.refresh('foreground');
+    assert.deepEqual(seen, ['abcdef123', undefined]);
+    host.setKey('cineplex', null);
+    assert.deepEqual(host.keyHints(), {});
+  });
+
   test('a plugin that hangs times out', async () => {
     const host = createHost({
       kv: memoryKv(),

@@ -62,6 +62,20 @@
       "default": 60,
       "description": "How long a run may take before the host stops it. For slow sites."
     },
+    "keys": {
+      "type": "array",
+      "description": "Keys the user supplies in Settings (kept only on the device). Read with ctx.key(name).",
+      "items": {
+        "type": "object",
+        "required": ["name", "label"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "label": { "type": "string" },
+          "help": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
     "enabledByDefault": {
       "type": "boolean",
       "default": true,

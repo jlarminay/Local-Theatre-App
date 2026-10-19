@@ -7,9 +7,13 @@ android {
         applicationId "com.joshlarminay.localtheatre"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        // Same version as package.json, so Android's App info matches the Settings page.
-        versionName new groovy.json.JsonSlurper().parse(file("../../package.json")).version
+        // Both from package.json, so there's one place to bump. versionName is
+        // shown (App info, Settings); versionCode is the whole number Android
+        // compares to tell an update: major*10000 + minor*100 + patch (2.1.0 → 20100).
+        def appVersion = new groovy.json.JsonSlurper().parse(file("../../package.json")).version
+        def (major, minor, patch) = appVersion.tokenize('.-')[0..2].collect { it as int }
+        versionCode major * 10000 + minor * 100 + patch
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

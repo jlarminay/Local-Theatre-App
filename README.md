@@ -2,7 +2,7 @@
 
 A personal Android app (Vue + TypeScript + Capacitor) that shows local cinemas' schedules in one
 readable place and sends a notification when a new film is added. Each cinema is a plugin; the
-Vic (Victoria Film Theatre), Cinecenta, the Roxy and Capitol 6 are built in.
+Vic (Victoria Film Theatre), Cinecenta, the Roxy, Capitol 6 and SilverCity Victoria are built in.
 
 > **Disclaimer:** This is an unofficial personal project. It is not affiliated with, endorsed by,
 > or connected to any of the theatres it lists or the organisations that run them (the Victoria
@@ -23,7 +23,10 @@ Vic (Victoria Film Theatre), Cinecenta, the Roxy and Capitol 6 are built in.
   API, in one request for all films. Cinecenta's showtimes come from The Events Calendar's public
   REST API, and its details from one event page per film (cached, refreshed every few days).
   The Roxy and Capitol 6 both run on CinemaHosting (`plugins/sdk/cinemahosting.ts`): the
-  homepage lists every film, and each film's page has its details and showtimes.
+  homepage lists every film, and each film's page has its details and showtimes. Cineplex theatres
+  (`plugins/sdk/cineplex.ts`, one plugin per location id) use the API cineplex.com's own pages
+  use, which needs the key those pages send: each user enters it in Settings, and it's never in
+  the code. Cineplex's terms allow personal, non-commercial use only.
 - **The background runner** (`runner/runner.ts`, Capacitor's headless QuickJS engine) is the only
   place plugins run on the phone. The plugin host (`src/host/host.ts`) runs the enabled ones in
   order, keeps each theatre's last good result if a run fails, and stores everything in the
@@ -99,6 +102,9 @@ Optional manifest fields worth knowing:
 - `titleExtras`: event wording in the theatre's titles (`"Fright Fest"`, `"Director's Cut"`), cut
   out for poster lookups and combining. A trailing `*` cuts everything after (`"w/*"`).
 - `posterSource`: `"theatre"` to keep the theatre's own images instead of TMDB posters.
+- `keys`: keys the user must enter in Settings (kept only on the device), read with
+  `ctx.key(name)`. Plugins sharing a key use the same `name`. For `npm run plugin`, pass them as
+  `PLUGIN_KEY_<NAME>=… npm run plugin <id>`.
 
 A folder whose name starts with `_` is **dev-only**: it's included in `npm run dev` and never in a
 build, e.g. a made-up theatre with static data for working on the UI. Turn theatres on and off in

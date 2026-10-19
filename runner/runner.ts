@@ -49,8 +49,9 @@ const host = createHost({
     set: (key, value) => runner.CapacitorKV.set(key, value),
     remove: (key) => runner.CapacitorKV.remove(key),
   },
-  get: async (url) => {
-    const response = await fetch(url);
+  get: async (url, headers) => {
+    // The runner's fetch wants an explicit method whenever options are given.
+    const response = await fetch(url, headers ? { method: 'GET', headers } : undefined);
     return { status: response.status, text: await response.text() };
   },
 });
@@ -96,12 +97,38 @@ function notify(title: string, body: string, largeBody?: string) {
   ]);
 }
 
-type NewFilm = { title: string; theatre: string };
+/** A film for the alert: its upcoming showings (local "2026-10-30T17:10:00"), soonest first. */
+type NewFilm = { title: string; theatre: string; starts?: string[] };
 
 const theatreName = (id: string) =>
   plugins.find(({ manifest }) => manifest.id === id)?.manifest.name ?? id;
 // Mid-sentence: "New at the Vic", not "New at The Vic".
 const atName = (id: string) => theatreName(id).replace(/^The /, 'the ');
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "2026-10-30T17:10:00" → "Fri Oct 30, 5:10 pm" (no Intl in the runner's engine). */
+function when(start: string): string {
+  const [date, time = '00:00'] = start.split('T');
+  const [y, m, d] = date.split('-').map(Number);
+  const [h, min] = time.split(':').map(Number);
+  const day = DAYS[new Date(y, m - 1, d).getDay()];
+  return `${day} ${MONTHS[m - 1]} ${d}, ${h % 12 || 12}:${String(min).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
+}
+/** "Fri Oct 30, 5:10 pm (+10 more)" */
+const nextShowing = (film: NewFilm) =>
+  film.starts?.length
+    ? `${when(film.starts[0])}${film.starts.length > 1 ? ` (+${film.starts.length - 1} more)` : ''}`
+    : '';
+const MAX_TIMES_LISTED = 8;
+
+/** A local wall time's epoch ms (the phone is in the theatres' time zone). */
+function localMs(start: string): number {
+  const [date, time = '00:00'] = start.split('T');
+  const [y, m, d] = date.split('-').map(Number);
+  const [h, min] = time.split(':').map(Number);
+  return new Date(y, m - 1, d, h, min).getTime();
+}
 
 /** The new-film alert. Used by the real check and by the test, so they always match. */
 function notifyNewFilms(films: NewFilm[]) {
@@ -109,20 +136,31 @@ function notifyNewFilms(films: NewFilm[]) {
   const titles = films.map((film) => film.title);
   const theatres = new Set(films.map((film) => film.theatre));
   const [only] = theatres;
-  if (films.length === 1) return notify(`New at ${atName(only)}`, titles[0]);
-  // Collapsed: one line. Expanded: one film per line, with its theatre when
-  // they're from several. largeBody needs the patch in patches/ — stock
-  // plugin 3.0.0 ignores it.
-  if (theatres.size === 1)
+  // largeBody (the expanded notification) needs the patch in patches/ —
+  // stock plugin 3.0.0 ignores it.
+  if (films.length === 1) {
+    const [film] = films;
+    const starts = film.starts ?? [];
+    const listed = starts.slice(0, MAX_TIMES_LISTED).map(when);
+    if (starts.length > MAX_TIMES_LISTED) listed.push(`+${starts.length - MAX_TIMES_LISTED} more`);
     return notify(
-      `${films.length} new films at ${atName(only)}`,
-      titles.join(' · '),
-      titles.join('\n'),
+      `New at ${atName(only)}`,
+      [film.title, nextShowing(film)].filter(Boolean).join(' · '),
+      listed.length ? [film.title, ...listed].join('\n') : undefined,
     );
+  }
+  // Collapsed: the titles. Expanded: one film per line with its next showing,
+  // and its theatre when they're from several.
+  const line = (film: NewFilm) =>
+    [film.title, theatres.size > 1 ? theatreName(film.theatre) : '', nextShowing(film)]
+      .filter(Boolean)
+      .join(' · ');
   notify(
-    `${films.length} new films`,
+    theatres.size === 1
+      ? `${films.length} new films at ${atName(only)}`
+      : `${films.length} new films`,
     titles.join(' · '),
-    films.map((film) => `${film.title} · ${theatreName(film.theatre)}`).join('\n'),
+    films.map(line).join('\n'),
   );
 }
 
@@ -147,7 +185,23 @@ on('checkSchedule', async (args: { force?: boolean }): Promise<LastCheck | { ski
     return { skipped: true };
   const { state, added, runs } = await host.refresh('background');
   const newTitles = added.map((film) => film.title);
-  if (alertsEnabled()) notifyNewFilms(added);
+  if (alertsEnabled()) {
+    // Each new film with its upcoming showings (a film new at a second theatre counts too).
+    const now = Date.now();
+    const upcoming = (key: string) =>
+      state.theatres
+        .flatMap((t) => t.showtimes)
+        .filter((show) => show.filmKey === key && localMs(show.start) >= now - 30 * 60_000)
+        .map((show) => show.start)
+        .sort();
+    notifyNewFilms(
+      added.map((film) => ({
+        title: film.title,
+        theatre: film.theatre,
+        starts: upcoming(film.key),
+      })),
+    );
+  }
 
   const failed = state.theatres.filter((t) => runs[t.manifest.id] && !runs[t.manifest.id].ok);
   const check: LastCheck = {
@@ -187,6 +241,13 @@ on('plugins', (args: { enabled?: string[] }): HostState =>
 
 // "Clear cached schedule": forget results and plugin storage (first-seen dates stay).
 on('clearCache', () => host.clear());
+
+// Plugin keys (manifest "keys"): saves one when `name` is passed (`value`
+// null or empty removes it), and returns a hint ("…a1b") for each key that's set.
+on('keys', (args: { name?: string; value?: string | null }) => {
+  if (typeof args.name === 'string') host.setKey(args.name, args.value ?? null);
+  return host.keyHints();
+});
 
 // Reads the check rate (hours, 0 = never), and changes it when `rate` is passed.
 on('checkRate', (args: { rate?: unknown }) => {

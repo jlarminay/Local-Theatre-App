@@ -6,6 +6,7 @@
 //   npm run plugin <id> -- --background   run as the periodic check would
 //   npm run plugin <id> -- --json         print the full result
 //
+// Keys a plugin needs (manifest "keys") come from PLUGIN_KEY_<NAME> variables.
 // The store persists in plugins/.store/<id>.json, so a --background run sees
 // what a previous run saved. Delete the file to start fresh.
 //
@@ -52,9 +53,11 @@ try {
 
 let requests = 0;
 const ctx: Ctx = {
-  http: makeHttp(plugin.manifest, async (url) => {
+  http: makeHttp(plugin.manifest, async (url, headers) => {
     requests++;
-    const response = await fetch(url, { headers: { 'user-agent': 'LocalTheatre-dev' } });
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'LocalTheatre-dev', ...headers },
+    });
     return { status: response.status, text: await response.text() };
   }),
   store: {
@@ -68,6 +71,8 @@ const ctx: Ctx = {
   progress: (step, done, total) =>
     console.error(`[${id}] … ${step}${total ? ` ${done ?? 0}/${total}` : ''}`),
   deadline: Date.now() + Math.min(plugin.manifest.timeoutSeconds ?? 60, 300) * 1000,
+  // Plugin keys come from the environment: PLUGIN_KEY_CINEPLEX=… npm run plugin <id>
+  key: (name) => process.env[`PLUGIN_KEY_${name.toUpperCase().replace(/-/g, '_')}`],
 };
 
 const started = Date.now();
