@@ -1,0 +1,16 @@
+{
+  "$schema": "../sdk/manifest.schema.json",
+  "id": "vic",
+  "name": "The Vic",
+  "shortName": "VIC",
+  "color": "#e6177f",
+  "version": "1.0.0",
+  "author": "Josh Larminay",
+  "updated": "2026-10-18",
+  "apiVersion": 1,
+  "homepage": "https://www.victoriafilmfestival.com/festival/victoria-film-theatre-monthly-calendar/",
+  "owner": "Victoria Film Festival",
+  "domains": ["www.victoriafilmfestival.com"],
+  "titleExtras": ["Fright Fest", "Retromania", "CAMP! Series", "Director's Cut"],
+  "enabledByDefault": true
+}

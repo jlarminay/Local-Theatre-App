@@ -12,3 +12,6 @@ CHANGELOG.md
 android/
 patches/
 assets/
+
+# Saved site responses for plugin tests
+plugins/*/fixtures/

@@ -1,31 +1,32 @@
 import { computed, ref, watch } from 'vue';
 
-import type { FilmDetails } from '../lib/vic';
 import { useSchedule, type Film } from './useSchedule';
 
 // Starred films, kept on the device. Stored apart from the schedule cache so
 // bumping CACHE_VERSION never clears them. Each keeps a snapshot of the film so
 // it can still be shown after it leaves the schedule.
+//
+// A save is stored under one theatre's film key ("vic:385117"), but a film
+// combined from several theatres has several keys (Film.keys), so lookups
+// match on any of them. That way a save survives a film being combined with
+// another theatre's listing, or split apart again.
 
 export type SavedFilm = {
-  id: number;
-  title: string;
-  details: FilmDetails | null;
+  film: Omit<Film, 'showtimes' | 'isNew'>;
   /** Start of the film's final listed showing, once known. */
   lastShowing: string | null;
 };
 
-const SAVED_KEY = 'vic-theatre:saved';
+const SAVED_KEY = 'local-theatre:saved';
 
-function load(): Record<number, SavedFilm> {
+function load(): Record<string, SavedFilm> {
   try {
-    const stored = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '{}') as
-      Record<number, SavedFilm> | number[];
-    // Saves used to be a bare list of ids; their snapshots fill in from the schedule.
-    if (Array.isArray(stored)) {
-      return Object.fromEntries(
-        stored.map((id) => [id, { id, title: '', details: null, lastShowing: null }]),
-      );
+    const stored = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '{}') as Record<string, SavedFilm>;
+    // Saves from before films could be combined lack keys/theatres/links.
+    for (const { film } of Object.values(stored)) {
+      film.keys ??= [film.key];
+      film.theatres ??= [film.theatre];
+      film.links ??= film.url ? [{ theatre: film.theatre, url: film.url }] : [];
     }
     return stored;
   } catch {
@@ -33,7 +34,7 @@ function load(): Record<number, SavedFilm> {
   }
 }
 
-const saved = ref<Record<number, SavedFilm>>(load());
+const saved = ref<Record<string, SavedFilm>>(load());
 
 function persist() {
   try {
@@ -43,44 +44,49 @@ function persist() {
   }
 }
 
-function snapshot(film: Film): SavedFilm {
-  return {
-    id: film.id,
-    title: film.title,
-    details: film.details,
-    lastShowing: film.showtimes.at(-1)?.start ?? null,
-  };
+function snapshot({ showtimes, isNew: _isNew, ...film }: Film): SavedFilm {
+  return { film, lastShowing: showtimes.at(-1)?.start ?? null };
+}
+
+const overlaps = (a: string[], b: string[]) => a.some((key) => b.includes(key));
+
+/** The key a film is saved under, if it's saved. */
+function savedKey(film: { keys: string[] }): string | undefined {
+  return Object.keys(saved.value).find(
+    (key) => film.keys.includes(key) || overlaps(film.keys, saved.value[key].film.keys),
+  );
 }
 
 const { films, updatedAt } = useSchedule();
 
 function toggleSaved(film: Film) {
   const next = { ...saved.value };
-  if (next[film.id]) delete next[film.id];
-  else next[film.id] = snapshot(film);
+  const key = savedKey(film);
+  if (key) delete next[key];
+  else next[film.key] = snapshot(film);
   saved.value = next;
   persist();
 }
 
-/** Remove by id — for films no longer on the schedule. */
-function unsave(id: number) {
+/** Remove a save — also for films no longer on the schedule. */
+function unsave(film: { keys: string[] }) {
+  const key = savedKey(film);
+  if (!key) return;
   const next = { ...saved.value };
-  delete next[id];
+  delete next[key];
   saved.value = next;
   persist();
 }
 
-const isSaved = (id: number) => id in saved.value;
+const isSaved = (film: { keys: string[] }) => savedKey(film) !== undefined;
+
+/** The save for a theatre's film key, if any (e.g. for a film page's URL). */
+const savedByKey = (key: string): SavedFilm | undefined =>
+  saved.value[key] ?? Object.values(saved.value).find((entry) => entry.film.keys.includes(key));
 
 /** A passed save in the shape the poster grid and detail page use. */
-export function savedAsFilm(film: SavedFilm): Film {
-  return {
-    id: film.id,
-    title: film.title || film.details?.name || 'Saved film',
-    details: film.details,
-    showtimes: [],
-    isNew: false,
-  };
+export function savedAsFilm(saved: SavedFilm): Film {
+  return { ...saved.film, showtimes: [], isNew: false };
 }
 
 // Keep snapshots current while films are still listed.
@@ -90,8 +96,9 @@ watch(
     let changed = false;
     const next = { ...saved.value };
     for (const film of current) {
-      if (!next[film.id]) continue;
-      next[film.id] = snapshot(film);
+      const key = savedKey(film);
+      if (!key) continue;
+      next[key] = snapshot(film);
       changed = true;
     }
     if (!changed) return;
@@ -102,18 +109,18 @@ watch(
 );
 
 /** Saved films still on the schedule, soonest first. */
-const savedUpcoming = computed(() => films.value.filter((film) => isSaved(film.id)));
+const savedUpcoming = computed(() => films.value.filter(isSaved));
 
 /** Saved films that have left the schedule, most recently shown first. */
 const savedPassed = computed<SavedFilm[]>(() => {
   // Until the schedule has loaded once, everything would look passed.
   if (updatedAt.value === null) return [];
-  const listed = new Set(films.value.map((film) => film.id));
+  const listed = films.value.flatMap((film) => film.keys);
   return Object.values(saved.value)
-    .filter((film) => !listed.has(film.id))
+    .filter((entry) => !overlaps(entry.film.keys, listed))
     .sort((a, b) => (b.lastShowing ?? '').localeCompare(a.lastShowing ?? ''));
 });
 
 export function useSaved() {
-  return { saved, isSaved, toggleSaved, unsave, savedUpcoming, savedPassed };
+  return { saved, savedByKey, isSaved, toggleSaved, unsave, savedUpcoming, savedPassed };
 }

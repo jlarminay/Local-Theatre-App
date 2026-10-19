@@ -3,20 +3,28 @@ import { computed } from 'vue';
 
 import { savedAsFilm, useSaved } from '../composables/useSaved';
 import { useSchedule } from '../composables/useSchedule';
+import { useTheatreFilter } from '../composables/useTheatreFilter';
 import PosterGrid from './PosterGrid.vue';
 
 const props = defineProps<{ savedOnly?: boolean }>();
 
 const { films, loading } = useSchedule();
 const { savedUpcoming, savedPassed } = useSaved();
+const { matches, noneShown } = useTheatreFilter();
 
-const shown = computed(() => (props.savedOnly ? savedUpcoming.value : films.value));
+// The theatre filter applies to the lineup, not to Saved.
+const shown = computed(() =>
+  props.savedOnly ? savedUpcoming.value : films.value.filter((film) => film.theatres.some(matches)),
+);
 const passed = computed(() => (props.savedOnly ? savedPassed.value.map(savedAsFilm) : []));
 </script>
 
 <template>
   <p v-if="!shown.length && !passed.length" class="py-16 text-center text-muted-1">
     <template v-if="loading">Loading the lineup…</template>
+    <template v-else-if="!savedOnly && noneShown"
+      >No theatres selected.<br />Pick some from the theatre menu.</template
+    >
     <template v-else-if="savedOnly"
       >You have no movies saved.<br />Tap the ☆ on a poster to save it.</template
     >

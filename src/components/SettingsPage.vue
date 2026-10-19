@@ -6,14 +6,16 @@ import { useRoute, useRouter } from 'vue-router';
 
 import changelogMarkdown from '../../CHANGELOG.md?raw';
 import { useNow } from '../composables/useNow';
+import { usePosters } from '../composables/usePosters';
 import { useSaved } from '../composables/useSaved';
 import { AUTO_REFRESH_MIN_MS, useSchedule } from '../composables/useSchedule';
-import { formatDateTime, timeAgo } from '../lib/format';
-import { CALENDAR_URL, SITE } from '../lib/schedule';
+import { CHECK_RATES, checkRateLabel, DEFAULT_CHECK_RATE, type CheckRate } from '../host/checks';
+import { formatDate, formatDateTime, timeAgo } from '../lib/format';
+import { canScanQr, scanQr } from '../lib/scanQr';
 import {
   alertsEnabled,
-  CHECK_INTERVAL_MINUTES,
   checkNow,
+  checkRate,
   ensureNotificationPermission,
   notificationPermission,
   testNotification,
@@ -22,8 +24,23 @@ import {
 import { goBack } from '../router';
 import BaseModal from './BaseModal.vue';
 import InfoButton from './InfoButton.vue';
+import TheatreTag from './TheatreTag.vue';
+import ToggleSwitch from './ToggleSwitch.vue';
 
-const { films, upcoming, updatedAt, lastCheck, loading, refresh, clearCache } = useSchedule();
+const {
+  films,
+  upcoming,
+  theatres,
+  updatedAt,
+  lastCheck,
+  loading,
+  refresh,
+  syncState,
+  clearCache,
+  setTheatreEnabled,
+  combineFilms,
+  setCombineFilms,
+} = useSchedule();
 const { saved } = useSaved();
 
 const native = Capacitor.isNativePlatform();
@@ -72,11 +89,109 @@ async function toggleAlerts() {
   }
 }
 
+// How often the background check runs. Saved as soon as it's picked.
+const rate = ref<CheckRate>(DEFAULT_CHECK_RATE);
+onMounted(async () => {
+  try {
+    rate.value = await checkRate();
+  } catch {
+    // runner unavailable — show the default
+  }
+});
+
+async function onRateChange(event: Event) {
+  const previous = rate.value;
+  const next = Number((event.target as HTMLSelectElement).value) as CheckRate;
+  rate.value = next;
+  try {
+    rate.value = await checkRate(next);
+  } catch (err) {
+    rate.value = previous;
+    message.value = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/** One line under a theatre's name: what it last returned, or why it failed. */
+function theatreStatus(theatre: (typeof theatres.value)[number]) {
+  const run = theatre.lastRun;
+  if (run && !run.ok) return { error: true, text: run.error ?? 'Failed' };
+  if (!theatre.updatedAt) return { error: false, text: theatre.enabled ? 'Not loaded yet' : 'Off' };
+  return {
+    error: false,
+    text: `${theatre.films.length} films`,
+  };
+}
+
+const onToggleTheatre = (id: string, on: boolean) =>
+  run(async () => {
+    await setTheatreEnabled(id, on);
+    return '';
+  });
+
 // Modals are a query param (?info=…), so Android's Back closes them.
 const route = useRoute();
 const router = useRouter();
-type Modal = 'schedule' | 'alerts' | 'changelog';
+/** 'schedule', 'alerts', 'changelog', or 'theatre:<id>' for a theatre's info. */
+type Modal = 'schedule' | 'alerts' | 'changelog' | 'tmdb-key' | `theatre:${string}`;
 const openModal = computed(() => route.query.info as Modal | undefined);
+// Per-theatre poster choice, in the theatre's info. Saved as soon as it's picked.
+const { tmdbAvailable, keyHint, saveKey, removeKey, imageChoice, setImageChoice, lookupError } =
+  usePosters();
+
+// The TMDB key modal. The key is write-only: the field always starts empty,
+// and saving replaces whatever was set before.
+const keyInput = ref('');
+const keyError = ref('');
+const keySaving = ref(false);
+function openKeyModal() {
+  keyInput.value = '';
+  keyError.value = '';
+  openInfo('tmdb-key');
+}
+// Bringing the key over from a computer: scan it from a QR code instead of typing.
+const keyScanStatus = ref('');
+async function onScanKey() {
+  keyError.value = '';
+  try {
+    const text = await scanQr((status) => (keyScanStatus.value = status));
+    if (text) keyInput.value = text;
+  } catch (err) {
+    keyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    keyScanStatus.value = '';
+  }
+}
+
+async function onSaveKey() {
+  keySaving.value = true;
+  keyError.value = '';
+  try {
+    await saveKey(keyInput.value);
+    keyInput.value = '';
+    closeInfo();
+  } catch (err) {
+    keyError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    keySaving.value = false;
+  }
+}
+const onImageChoice = (id: string, event: Event) =>
+  setImageChoice(id, (event.target as HTMLSelectElement).value as 'default' | 'own');
+
+/** "victoriafilmfestival.com" from a homepage URL. */
+const siteName = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+};
+
+/** The theatre whose info is open, if any. */
+const infoTheatre = computed(() => {
+  const id = openModal.value?.startsWith('theatre:') && openModal.value.slice('theatre:'.length);
+  return id ? (theatres.value.find((t) => t.manifest.id === id) ?? null) : null;
+});
 let openedHere = false;
 function openInfo(modal: Modal) {
   openedHere = true;
@@ -106,19 +221,19 @@ async function run(action: () => Promise<string>) {
 
 const onCheck = () =>
   run(async () => {
-    lastCheck.value = await checkNow();
-    return lastCheck.value.newTitles.length
-      ? `New: ${lastCheck.value.newTitles.join(', ')}`
-      : 'No new films.';
+    const check = await checkNow();
+    // The check also refreshed the theatres' results.
+    await syncState();
+    return check.newTitles.length ? `New: ${check.newTitles.join(', ')}` : 'No new films.';
   });
 
 const onTest = () =>
   run(async () => {
     // Any current film makes a realistic example.
-    const example =
-      films.value[Math.floor(Math.random() * films.value.length)]?.title ?? 'A new film';
-    await testNotification([example]);
-    return `Sent a sample alert for "${example}" — check your notifications.`;
+    const film = films.value[Math.floor(Math.random() * films.value.length)];
+    const example = film ? { title: film.title, theatre: film.theatre } : null;
+    await testNotification(example ? [example] : []);
+    return `Sent a sample alert for "${example?.title ?? 'A new film'}" — check your notifications.`;
   });
 
 const onAllow = () =>
@@ -128,7 +243,7 @@ const onAllow = () =>
     // Once blocked, Android stops showing the prompt; only system settings can undo it.
     return granted
       ? 'Notifications allowed.'
-      : 'Still blocked — allow them in Android Settings → Apps → Vic Theatre.';
+      : 'Still blocked — allow them in Android Settings → Apps → Local Theatre.';
   });
 
 const onClear = () =>
@@ -144,15 +259,104 @@ const onClear = () =>
       class="sticky top-0 z-10 flex items-center gap-3 border-b border-border-1 bg-paper/95 px-4 pt-[max(env(safe-area-inset-top),14px)] pb-3 backdrop-blur"
     >
       <button
-        class="rounded-full border border-border-2 bg-transparent px-4 py-1.5 text-ink"
+        class="flex items-center gap-1.5 rounded-full border border-border-2 bg-transparent py-1.5 pr-4 pl-3 text-ink"
         @click="goBack"
       >
-        ← Back
+        <svg
+          viewBox="0 0 24 24"
+          class="h-4 w-4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M19 12H5m6-6-6 6 6 6" />
+        </svg>
+        Back
       </button>
       <h1 class="m-0 font-display text-[32px] leading-none tracking-wide">Settings</h1>
     </header>
 
     <div class="flex flex-col gap-6 px-4 pt-5 pb-4">
+      <section>
+        <h2 class="mb-2 font-display text-[22px] leading-none tracking-wide text-accent">
+          Settings
+        </h2>
+        <dl class="settings-list">
+          <div v-if="theatres.length > 1" class="items-center">
+            <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+              <span class="text-[14px]">Combine films</span>
+              <span class="text-[12px] text-muted-1">
+                Show a film on at several theatres once, with every theatre's showtimes
+              </span>
+            </dt>
+            <dd>
+              <ToggleSwitch
+                :on="combineFilms"
+                label="Combine films on at several theatres"
+                @toggle="setCombineFilms(!combineFilms)"
+              />
+            </dd>
+          </div>
+          <div class="items-center">
+            <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+              <span class="text-[14px]">TMDB key</span>
+              <span class="text-[12px] text-muted-1"> For posters from The Movie Database </span>
+              <span v-if="lookupError" class="text-[12px] text-error">{{ lookupError }}</span>
+            </dt>
+            <dd class="flex flex-wrap gap-2">
+              <template v-if="keyHint">
+                <button class="settings-button whitespace-nowrap" @click="removeKey">
+                  Remove key
+                </button>
+                <button class="settings-button whitespace-nowrap" @click="openKeyModal">
+                  Add another
+                </button>
+              </template>
+              <button v-else class="settings-button whitespace-nowrap" @click="openKeyModal">
+                Add key
+              </button>
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section>
+        <h2 class="mb-2 font-display text-[22px] leading-none tracking-wide text-accent">
+          Theatres
+        </h2>
+        <dl class="settings-list">
+          <div v-for="theatre in theatres" :key="theatre.manifest.id" class="items-center">
+            <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+              <span class="flex items-center gap-2 text-[14px]">
+                <TheatreTag :theatre="theatre.manifest.id" always />
+                {{ theatre.manifest.name }}
+              </span>
+              <span
+                class="text-[12px]"
+                :class="theatreStatus(theatre).error ? 'text-error' : 'text-muted-1'"
+              >
+                {{ theatreStatus(theatre).text }}
+              </span>
+            </dt>
+            <dd class="flex items-center gap-2">
+              <InfoButton
+                :label="`About ${theatre.manifest.name}`"
+                @click="openInfo(`theatre:${theatre.manifest.id}`)"
+              />
+              <ToggleSwitch
+                :on="theatre.enabled"
+                :label="theatre.manifest.name"
+                :disabled="loading || busy"
+                @toggle="onToggleTheatre(theatre.manifest.id, !theatre.enabled)"
+              />
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       <section>
         <h2
           class="mb-2 flex items-center gap-2 font-display text-[22px] leading-none tracking-wide text-accent"
@@ -200,24 +404,33 @@ const onClear = () =>
             <dt>Alerts</dt>
             <dd class="flex flex-1 items-center justify-between gap-3">
               {{ alerts ? 'On' : 'Off' }}
-              <button
-                role="switch"
-                :aria-checked="alerts"
-                aria-label="New film alerts"
-                class="relative h-6 w-11 shrink-0 rounded-full border-0 p-0 transition-colors duration-200"
-                :class="alerts ? 'bg-accent' : 'bg-border-2'"
-                @click="toggleAlerts"
-              >
-                <span
-                  class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
-                  :class="alerts && 'translate-x-5'"
-                />
-              </button>
+              <ToggleSwitch :on="alerts" label="New film alerts" @toggle="toggleAlerts" />
             </dd>
           </div>
-          <div>
-            <dt>Background check</dt>
-            <dd>About every {{ CHECK_INTERVAL_MINUTES / 60 }} hours</dd>
+          <div class="items-center">
+            <dt><label for="check-rate">Background check</label></dt>
+            <dd class="relative">
+              <select
+                id="check-rate"
+                :value="rate"
+                class="appearance-none rounded-lg border border-border-2 bg-paper py-1.5 pr-8 pl-3 text-[13px] text-ink"
+                @change="onRateChange"
+              >
+                <option v-for="option in CHECK_RATES" :key="option" :value="option">
+                  {{ checkRateLabel(option) }}
+                </option>
+              </select>
+              <svg
+                viewBox="0 0 24 24"
+                class="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-muted-1"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </dd>
           </div>
           <div>
             <dt>Last check</dt>
@@ -279,30 +492,30 @@ const onClear = () =>
               </button>
             </dd>
           </div>
-          <div>
-            <dt>Data from</dt>
-            <dd>
-              <a :href="CALENDAR_URL" target="_blank" rel="noopener" class="text-accent"
-                >The Vic's calendar ↗</a
-              >
-            </dd>
-          </div>
-          <div>
-            <dt>Website</dt>
-            <dd>
-              <a :href="SITE" target="_blank" rel="noopener" class="text-accent"
-                >victoriafilmfestival.com ↗</a
-              >
-            </dd>
-          </div>
         </dl>
-        <p class="mt-4 mb-0 text-[11px] leading-relaxed text-muted-1">
-          This is an unofficial, personal project made for fun. It isn't affiliated with, endorsed
-          by, or connected to the Vic Theatre or the Victoria Film Festival. All listings, images,
-          logos and trademarks belong to the Victoria Film Festival and the respective film studios,
-          distributors and rights holders. Showtimes and seat counts are read from their public
-          website and may be out of date. Always check the official site before buying tickets.
-        </p>
+        <div class="mt-4 text-[12px] leading-relaxed text-muted-1">
+          <p class="m-0">
+            This is an unofficial, personal project made for fun. It isn't affiliated with, endorsed
+            by, or connected to any of the theatres it lists:
+          </p>
+          <ul class="my-1.5 list-disc pl-5">
+            <li v-for="{ manifest } in theatres" :key="manifest.id">
+              {{ manifest.name }}<template v-if="manifest.owner"> — {{ manifest.owner }}</template>
+            </li>
+          </ul>
+          <p class="m-0">
+            All listings, images, logos and trademarks belong to the theatres and the respective
+            film studios, distributors and rights holders. Showtimes and seat counts are read from
+            their public websites and may be out of date. Always check the official site before
+            buying tickets.
+          </p>
+          <p v-if="tmdbAvailable" class="mt-1.5 mb-0">
+            Some posters come from
+            <a href="https://www.themoviedb.org/" target="_blank" rel="noopener" class="text-accent"
+              >The Movie Database (TMDB)</a
+            >. This product uses the TMDB API but is not endorsed or certified by TMDB.
+          </p>
+        </div>
       </section>
     </div>
     <BaseModal :open="openModal === 'schedule'" title="How refreshing works" @close="closeInfo">
@@ -312,8 +525,8 @@ const onClear = () =>
           without a connection.
         </li>
         <li>
-          Opening the app updates that copy from the Vic's site — at most {{ autoRefreshLimit }}.
-          Opening it again sooner just shows the copy you already have.
+          Opening the app updates that copy from the theatres' sites — at most
+          {{ autoRefreshLimit }}. Opening it again sooner just shows the copy you already have.
         </li>
         <li>
           <strong class="text-ink">Refresh now</strong> always updates straight away, and restarts
@@ -334,9 +547,10 @@ const onClear = () =>
     <BaseModal :open="openModal === 'alerts'" title="How alerts work" @close="closeInfo">
       <ul class="m-0 flex list-none flex-col gap-2.5 p-0 text-[13px] leading-relaxed text-muted-2">
         <li>
-          About every {{ CHECK_INTERVAL_MINUTES / 60 }} hours, the app checks the Vic's calendar in
-          the background — even when it's closed — and notifies you when a film appears that you
-          haven't seen before.
+          The app checks each theatre's listings in the background — even when it's closed — and
+          notifies you when a film appears that you haven't seen before. How often is set by
+          <strong class="text-ink">Background check</strong>: every hour up to once a day, or never
+          (Force check now still works).
         </li>
         <li>
           Opening the app counts as seeing the current lineup, so you're only alerted about films
@@ -352,6 +566,167 @@ const onClear = () =>
         </li>
       </ul>
       <template #close>Got it</template>
+    </BaseModal>
+
+    <BaseModal
+      :open="Boolean(infoTheatre)"
+      :title="infoTheatre?.manifest.name ?? ''"
+      @close="closeInfo"
+    >
+      <template v-if="infoTheatre">
+        <dl class="theatre-info">
+          <div>
+            <dt>Tag</dt>
+            <dd><TheatreTag :theatre="infoTheatre.manifest.id" always /></dd>
+          </div>
+          <div v-if="infoTheatre.manifest.owner">
+            <dt>Run by</dt>
+            <dd>{{ infoTheatre.manifest.owner }}</dd>
+          </div>
+          <div>
+            <dt>Data from</dt>
+            <dd>
+              <a
+                :href="infoTheatre.manifest.homepage"
+                target="_blank"
+                rel="noopener"
+                class="text-accent"
+                >{{ siteName(infoTheatre.manifest.homepage) }} ↗</a
+              >
+            </dd>
+          </div>
+          <div>
+            <dt>Plugin by</dt>
+            <dd>{{ infoTheatre.manifest.author ?? 'Unknown' }}</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd>
+              {{ infoTheatre.manifest.version }}
+              <template v-if="infoTheatre.manifest.updated">
+                · {{ formatDate(infoTheatre.manifest.updated) }}</template
+              >
+            </dd>
+          </div>
+          <div>
+            <dt>Listed</dt>
+            <dd>
+              {{ infoTheatre.films.length }} films · {{ infoTheatre.showtimes.length }} showings
+            </dd>
+          </div>
+          <div class="items-center">
+            <dt><label for="image-choice">Posters</label></dt>
+            <dd class="flex flex-col gap-1">
+              <span class="relative self-start">
+                <select
+                  id="image-choice"
+                  :value="imageChoice(infoTheatre.manifest.id)"
+                  :disabled="!tmdbAvailable"
+                  class="appearance-none rounded-lg border border-border-2 bg-paper py-1.5 pr-8 pl-3 text-[13px] text-ink disabled:opacity-50"
+                  @change="onImageChoice(infoTheatre.manifest.id, $event)"
+                >
+                  <option value="default">Default</option>
+                  <option value="own">Use own images</option>
+                </select>
+                <svg
+                  viewBox="0 0 24 24"
+                  class="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-muted-1"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span v-if="!tmdbAvailable" class="text-[12px] text-muted-1">
+                Uses the theatre's images until a TMDB key is added in Settings.
+              </span>
+            </dd>
+          </div>
+        </dl>
+        <details v-if="infoTheatre.lastRun?.log.length" class="mt-3 text-[12px] text-muted-2">
+          <summary class="cursor-pointer text-muted-1">Log from the last run</summary>
+          <pre
+            class="mt-2 max-h-48 overflow-auto rounded-lg bg-paper p-2.5 font-mono text-[11px] whitespace-pre-wrap"
+            >{{ infoTheatre.lastRun.log.join('\n') }}</pre>
+        </details>
+      </template>
+      <template #close>Close</template>
+    </BaseModal>
+
+    <BaseModal :open="openModal === 'tmdb-key'" title="TMDB key" @close="closeInfo">
+      <form class="flex flex-col gap-3 text-[13px] text-muted-2" @submit.prevent="onSaveKey">
+        <p class="m-0 leading-relaxed">
+          Posters can come from The Movie Database. It needs your own free key: sign up at
+          <a
+            href="https://www.themoviedb.org/settings/api"
+            target="_blank"
+            rel="noopener"
+            class="text-accent"
+            >themoviedb.org ↗</a
+          >
+          and paste the <strong class="text-ink">API Key</strong> or
+          <strong class="text-ink">API Read Access Token</strong>. It's kept only on this device.
+        </p>
+        <p v-if="keyHint" class="m-0">
+          A key ending <span class="font-mono text-ink">{{ keyHint }}</span> is set. Saving a new
+          one replaces it.
+        </p>
+        <div class="flex gap-2">
+          <input
+            v-model="keyInput"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            :placeholder="keyHint ? 'New key' : 'Key'"
+            aria-label="TMDB key"
+            class="min-w-0 flex-1 rounded-lg border border-border-2 bg-paper px-3 py-2 font-mono text-[13px] text-ink"
+          />
+          <button
+            v-if="canScanQr"
+            type="button"
+            class="grid w-11 shrink-0 place-items-center rounded-lg border border-border-2 bg-transparent text-ink"
+            aria-label="Scan the key from a QR code"
+            :disabled="Boolean(keyScanStatus)"
+            @click="onScanKey"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              class="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.8l1.4-2h6.6l1.4 2h1.8A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"
+              />
+              <circle cx="12" cy="13" r="3.5" />
+            </svg>
+          </button>
+        </div>
+        <p v-if="keyScanStatus" class="m-0">{{ keyScanStatus }}</p>
+        <p v-if="keyError" class="m-0 text-error">{{ keyError }}</p>
+      </form>
+      <template #actions>
+        <div class="flex gap-2">
+          <button
+            class="flex-1 rounded-lg border border-border-2 bg-transparent py-2.5 text-[14px] text-ink"
+            @click="closeInfo"
+          >
+            Cancel
+          </button>
+          <button
+            class="flex-1 rounded-lg border-0 bg-accent py-2.5 text-[14px] font-medium text-white disabled:opacity-50"
+            :disabled="keySaving || !keyInput.trim()"
+            @click="onSaveKey"
+          >
+            {{ keySaving ? 'Checking…' : 'Save' }}
+          </button>
+        </div>
+      </template>
     </BaseModal>
 
     <BaseModal :open="openModal === 'changelog'" title="Changelog" @close="closeInfo">
@@ -387,6 +762,28 @@ const onClear = () =>
   margin: 0;
   min-width: 0;
   font-size: 13px;
+}
+.theatre-info {
+  margin: 0;
+  font-size: 13px;
+}
+.theatre-info > div {
+  display: flex;
+  gap: 1rem;
+  padding: 0.45rem 0;
+}
+.theatre-info > div + div {
+  border-top: 1px solid var(--color-border-1);
+}
+.theatre-info dt {
+  flex-shrink: 0;
+  width: 5.5rem;
+  color: var(--color-muted-1);
+}
+.theatre-info dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--color-ink);
 }
 .settings-button {
   border: 1px solid var(--color-border-2);

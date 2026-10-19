@@ -2,6 +2,22 @@
 
 # CHANGELOG
 
+## [2.0.0] - 2023-10-18
+### Changed
+- Renamed to Local Theatre
+- Theatres are now plugins, run by the background runner.
+- Added 2 default theaters: the Vic, and Cinecenta
+- Violet is new accent colour
+- The About disclaimer lists each theatre
+- A film on at several theatres is shown once, with each theatre's showtimes tagged
+- Updated Films page uses poster-shaped (2:3) tiles
+- Fix on a film's page: pick the right TMDB film when the poster match is wrong
+- Added TMDB api for posters
+- Added QR code scanner for api key
+- Background check rate is now a setting: every 1, 3, 6, 12 or 24 hours, or never (default 3 hours)
+- Tap "Updated …" in the header to see an update as it happens: each theatre's current step, progress and time
+- Updated single movie view with static header
+
 ## [1.0.2] - 2026-10-16
 ### Added
 - Info button explaining how the schedule refreshes
