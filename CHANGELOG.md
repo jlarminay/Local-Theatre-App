@@ -2,6 +2,10 @@
 
 # CHANGELOG
 
+## [2.1.0] - 2026-10-18
+### Added
+- 2 new default theaters; Roxy, Capitol 6
+
 ## [2.0.0] - 2026-10-18
 ### Changed
 - Renamed to Local Theatre
@@ -11,7 +15,7 @@
 - The About disclaimer lists each theatre
 - A film on at several theatres is shown once, with each theatre's showtimes tagged
 - Updated Films page uses poster-shaped (2:3) tiles
-- Fix on a film's page: pick the right TMDB film when the poster match is wrong
+- Add tool to fix TMDB matched movie
 - Added TMDB api for posters
 - Added QR code scanner for api key
 - Background check rate is now a setting: every 1, 3, 6, 12 or 24 hours, or never (default 3 hours)

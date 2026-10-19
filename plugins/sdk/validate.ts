@@ -17,6 +17,7 @@ function filmProblem(f: Record<string, unknown>): string | null {
   if (!isStr(f.key)) return 'missing key';
   if (!isStr(f.title)) return 'missing title';
   if (!optStr(f.url) || !optStr(f.image) || !optStr(f.imageSrcset)) return 'url/image not a string';
+  if (!optStr(f.director)) return 'director not a string';
   if (!optNum(f.imageAspect)) return 'imageAspect not a number';
   if (!optStrs(f.meta) || !optStrs(f.synopsis) || !optStrs(f.flags))
     return 'meta/synopsis/flags not a list of strings';

@@ -6,11 +6,13 @@ import { titleKey } from '../host/merge';
 import {
   backdropImages,
   checkKey,
+  fetchDetails,
   findMovie,
   posterImages,
   posterQueries,
   searchMovies,
   type Get,
+  type TmdbDetails,
   type TmdbMovie,
 } from '../lib/tmdb';
 
@@ -35,15 +37,15 @@ const CACHE_KEY = 'local-theatre:tmdb-posters';
 const MISS_RETRY_MS = 7 * 86_400_000;
 const CONCURRENCY = 3;
 
-/** What a film is looked up by: its title, release year and its theatre's titleExtras. */
-export type Lookup = { title: string; year: number | null; extras: string[] };
+/** What a film is looked up by: title, release year, its theatre's titleExtras and director. */
+export type Lookup = { title: string; year: number | null; extras: string[]; director?: string };
 
 /**
  * `v`: the matching rules it was found with. Entries from older rules (or
  * none, from before versions) are looked up again, so improvements to
  * matching fix posters that were cached wrong. Bump when matching changes.
  */
-const LOOKUP_VERSION = 2;
+const LOOKUP_VERSION = 4;
 /** `manual`: picked by the user with Fix on the film page; never looked up again. */
 type Entry = {
   path: string | null;
@@ -51,6 +53,9 @@ type Entry = {
   at: number;
   v?: number;
   manual?: boolean;
+  /** TMDB's id for the match, and the details used to fill gaps (null if they failed). */
+  id?: number;
+  details?: TmdbDetails | null;
 };
 
 function loadJson<T>(key: string, fallback: T): T {
@@ -104,17 +109,38 @@ function setImageChoice(id: string, choice: 'default' | 'own') {
   saveJson(OWN_IMAGES_KEY, ownImages.value);
 }
 
-const cacheKey = ({ title, year, extras }: Lookup) =>
-  `${titleKey(title)}|${year ?? ''}|${extras.join('|')}`;
+const cacheKey = ({ title, year, extras, director }: Lookup) =>
+  `${titleKey(title)}|${year ?? ''}|${extras.join('|')}|${director ?? ''}`;
+
+/**
+ * A film's cache entry. Hand-picked matches (Fix) saved before the director
+ * became part of the key are carried over to the new key the first time.
+ */
+function entryOf(lookup: Lookup): Entry | undefined {
+  const key = cacheKey(lookup);
+  const entry = cache.value[key];
+  if (entry || !lookup.director) return entry;
+  const old =
+    cache.value[`${titleKey(lookup.title)}|${lookup.year ?? ''}|${lookup.extras.join('|')}`];
+  if (!old?.manual) return undefined;
+  cache.value = { ...cache.value, [key]: old };
+  saveJson(CACHE_KEY, cache.value);
+  return old;
+}
 
 /** A looked-up poster and backdrop, once found. Reactive: fills in when a lookup finishes. */
-function cachedImages(lookup: Lookup): { poster?: Poster; backdrop?: Backdrop } {
+function cachedMatch(lookup: Lookup): {
+  poster?: Poster;
+  backdrop?: Backdrop;
+  details?: TmdbDetails | null;
+} {
   // An entry from older rules still shows until its new lookup lands.
-  const entry = cache.value[cacheKey(lookup)];
+  const entry = entryOf(lookup);
   if (!entry?.path) return {};
   return {
     poster: posterImages(entry.path),
     backdrop: entry.backdrop ? backdropImages(entry.backdrop) : undefined,
+    details: entry.details,
   };
 }
 
@@ -140,13 +166,24 @@ let keyRejected = false;
 function pump() {
   while (running < CONCURRENCY && queue.length && !keyRejected) {
     const lookup = queue.shift()!;
-    const { title, year, extras } = lookup;
+    const { title, year, extras, director } = lookup;
     const entryKey = cacheKey(lookup);
     running++;
-    findMovie(get, apiKey.value, title, year, extras)
-      .then((found) => {
+    findMovie(get, apiKey.value, title, year, extras, director)
+      .then(async (found) => {
+        // Details fill gaps in the listing; a failure there doesn't lose the poster.
+        const details = found
+          ? await fetchDetails(get, apiKey.value, found.id).catch(() => null)
+          : undefined;
         const entry: Entry = found
-          ? { path: found.poster, backdrop: found.backdrop, at: Date.now(), v: LOOKUP_VERSION }
+          ? {
+              path: found.poster,
+              backdrop: found.backdrop,
+              id: found.id,
+              details,
+              at: Date.now(),
+              v: LOOKUP_VERSION,
+            }
           : { path: null, backdrop: null, at: Date.now(), v: LOOKUP_VERSION };
         cache.value = { ...cache.value, [entryKey]: entry };
         saveJson(CACHE_KEY, cache.value);
@@ -171,7 +208,7 @@ function requestPosters(films: Lookup[]) {
   const now = Date.now();
   for (const film of films) {
     const entryKey = cacheKey(film);
-    const entry = cache.value[entryKey];
+    const entry = entryOf(film);
     const fresh =
       entry?.manual ||
       (entry?.v === LOOKUP_VERSION && (entry.path !== null || now - entry.at < MISS_RETRY_MS));
@@ -197,21 +234,32 @@ async function searchForFix(query: string, limit = 5): Promise<TmdbMovie[]> {
 
 /** The cached match for a film: its poster path (null = none) and whether it was picked by hand. */
 function matchOf(lookup: Lookup): { path: string | null; manual: boolean } | undefined {
-  const entry = cache.value[cacheKey(lookup)];
+  const entry = entryOf(lookup);
   return entry && { path: entry.path, manual: Boolean(entry.manual) };
 }
 
 /** Uses this TMDB film for the listing from now on; null = the theatre's own image. */
 function setMatch(lookup: Lookup, movie: TmdbMovie | null) {
+  const key = cacheKey(lookup);
   const entry: Entry = {
     path: movie?.poster_path ?? null,
     backdrop: movie?.backdrop_path ?? null,
+    id: movie?.id,
     at: Date.now(),
     v: LOOKUP_VERSION,
     manual: true,
   };
-  cache.value = { ...cache.value, [cacheKey(lookup)]: entry };
+  cache.value = { ...cache.value, [key]: entry };
   saveJson(CACHE_KEY, cache.value);
+  if (!movie) return;
+  // The details follow once fetched (unless the match has changed meanwhile).
+  fetchDetails(get, apiKey.value, movie.id)
+    .catch(() => null)
+    .then((details) => {
+      if (cache.value[key]?.id !== movie.id) return;
+      cache.value = { ...cache.value, [key]: { ...cache.value[key], details } };
+      saveJson(CACHE_KEY, cache.value);
+    });
 }
 
 /** Forgets a hand-picked match and looks the film up automatically again. */
@@ -255,7 +303,7 @@ export function usePosters() {
     usesDatabase,
     imageChoice,
     setImageChoice,
-    cachedImages,
+    cachedMatch,
     requestPosters,
     lookupError,
     firstQuery,

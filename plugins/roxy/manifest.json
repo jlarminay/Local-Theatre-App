@@ -1,0 +1,15 @@
+{
+  "$schema": "../sdk/manifest.schema.json",
+  "id": "roxy",
+  "name": "The Roxy",
+  "shortName": "ROXY",
+  "color": "#4f4b8a",
+  "version": "1.0.0",
+  "author": "Josh Larminay",
+  "updated": "2026-10-18",
+  "apiVersion": 1,
+  "homepage": "https://www.roxyvictoria.ca/",
+  "domains": ["www.roxyvictoria.ca"],
+  "titleExtras": ["Studio Ghibli Fest", "(19+)", "Re-release"],
+  "enabledByDefault": false
+}

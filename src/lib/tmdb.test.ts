@@ -4,6 +4,9 @@ import { describe, test } from 'node:test';
 import {
   backdropImages,
   checkKey,
+  directorNames,
+  fetchDetails,
+  fillFromTmdb,
   findMovie,
   pickMovie,
   posterImages,
@@ -60,6 +63,11 @@ describe('stripExtras (manifest titleExtras)', () => {
     );
     assert.equal(stripExtras('The Room – Presented by Greg Sestero', cinecenta), 'The Room');
     assert.equal(stripExtras('Toronto Apartment – DUFF', cinecenta), 'Toronto Apartment');
+    assert.equal(stripExtras('V for Vendetta (2026 Re-release)', ['Re-release']), 'V for Vendetta');
+    assert.equal(
+      stripExtras('Spirited Away - Studio Ghibli Fest (Subtitled)', ['Studio Ghibli Fest']),
+      'Spirited Away (Subtitled)',
+    );
   });
 
   test('whole words only, and the stripped title is searched first', () => {
@@ -123,7 +131,9 @@ describe('findMovie', () => {
       return { status: 200, text: JSON.stringify({ results }) };
     };
     const found = await findMovie(get, 'eyJtoken', 'Fright Fest – Suspiria 1977', 1977);
-    assert.deepEqual(found, { poster: '/Suspiria-1977.jpg', backdrop: '/still.jpg' });
+    assert.equal(found?.poster, '/Suspiria-1977.jpg');
+    assert.equal(found?.backdrop, '/still.jpg');
+    assert.equal(typeof found?.id, 'number');
     assert.equal(urls.length, 2);
   });
 
@@ -156,5 +166,103 @@ describe('checkKey', () => {
       checkKey(async () => ({ status: 401, text: '' }), 'bad'),
       /rejected this key/,
     );
+  });
+});
+
+describe('director matching', () => {
+  const fatherland = [
+    movie('Fatherland', '1994', { id: 1, vote_count: 200 }),
+    movie('Fatherland', '2026', { id: 2, vote_count: 4 }),
+  ];
+  const credits: Record<number, string> = { 1: 'Christopher Menaul', 2: 'Pawel Pawlikowski' };
+  function fakeGet(results: TmdbMovie[]) {
+    const urls: string[] = [];
+    const get = async (url: string) => {
+      urls.push(url);
+      const id = /\/movie\/(\d+)\/credits/.exec(url)?.[1];
+      const body = id
+        ? {
+            crew: [
+              { job: 'Director', name: credits[Number(id)] },
+              { job: 'Writer', name: 'X' },
+            ],
+          }
+        : { results };
+      return { status: 200, text: JSON.stringify(body) };
+    };
+    return { get, urls };
+  }
+
+  test('several films with the title: the director picks the right one (accents aside)', async () => {
+    const { get } = fakeGet(fatherland);
+    const found = await findMovie(get, 'eyJk', 'Fatherland', null, [], 'Paweł Pawlikowski');
+    assert.equal(found?.poster, '/Fatherland-2026.jpg');
+  });
+
+  test('one candidate: no credits requested', async () => {
+    const { get, urls } = fakeGet([fatherland[1]]);
+    await findMovie(get, 'eyJk', 'Fatherland', null, [], 'Someone Else');
+    assert.equal(urls.filter((u) => u.includes('/credits')).length, 0);
+  });
+
+  test('no director matches: the most-voted film stands', async () => {
+    const { get } = fakeGet(fatherland);
+    const found = await findMovie(get, 'eyJk', 'Fatherland', null, [], 'Nobody Known');
+    assert.equal(found?.poster, '/Fatherland-1994.jpg');
+  });
+
+  test('several directors listed', () => {
+    assert.deepEqual(directorNames('Jillian Frank & Avalon Fast'), [
+      'jillian frank',
+      'avalon fast',
+    ]);
+    assert.deepEqual(directorNames('Joel Coen, Ethan Coen'), ['joel coen', 'ethan coen']);
+  });
+});
+
+describe('filling gaps from TMDB', () => {
+  const details = {
+    year: 2026,
+    runtime: 82,
+    genres: ['Drama', 'History', 'War'],
+    overview: 'TMDB’s summary.',
+  };
+
+  test('adds year, runtime and two genres when the theatre gave none', () => {
+    const { meta, synopsis } = fillFromTmdb(
+      ['Paweł Pawlikowski'],
+      ['The theatre’s text.'],
+      details,
+    );
+    assert.deepEqual(meta, ['Paweł Pawlikowski', 'Drama', 'History', '2026', '82 min']);
+    assert.deepEqual(synopsis, ['The theatre’s text.']);
+  });
+
+  test('never duplicates what the theatre gave (the Vic lists genre, year and runtime)', () => {
+    const vic = ['PG', 'Drama', '2025', '112 min'];
+    assert.deepEqual(fillFromTmdb(vic, ['x'], details).meta, vic);
+  });
+
+  test('the overview only when the theatre has no description; nothing without details', () => {
+    assert.deepEqual(fillFromTmdb(undefined, [], details).synopsis, ['TMDB’s summary.']);
+    assert.deepEqual(fillFromTmdb(['A'], ['B'], null), { meta: ['A'], synopsis: ['B'] });
+  });
+
+  test('fetchDetails reads year, runtime, genres and overview', async () => {
+    const get = async () => ({
+      status: 200,
+      text: JSON.stringify({
+        release_date: '2026-05-20',
+        runtime: 82,
+        genres: [{ name: 'Drama' }, { name: 'War' }],
+        overview: ' Summary. ',
+      }),
+    });
+    assert.deepEqual(await fetchDetails(get, 'eyJk', 5), {
+      year: 2026,
+      runtime: 82,
+      genres: ['Drama', 'War'],
+      overview: 'Summary.',
+    });
   });
 });

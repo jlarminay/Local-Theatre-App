@@ -62,6 +62,7 @@ describe('cinecenta: event pages', () => {
     assert.equal(details.synopsis!.at(-1), 'Cast: Lesley Mannville');
     assert.equal(details.atTheDoor, true);
     assert.equal(details.bookUrl, undefined);
+    assert.equal(details.director, 'Sean Cisterna');
   });
 
   test('an online ticket link when the event sells them', () => {
@@ -74,6 +75,7 @@ describe('cinecenta: event pages', () => {
     assert.deepEqual(parseEventPage('<html></html>'), {
       meta: [],
       synopsis: [],
+      director: undefined,
       bookUrl: undefined,
       atTheDoor: false,
     });
