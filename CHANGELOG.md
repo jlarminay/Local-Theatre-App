@@ -2,7 +2,7 @@
 
 # CHANGELOG
 
-## [2.0.0] - 2023-10-18
+## [2.0.0] - 2026-10-18
 ### Changed
 - Renamed to Local Theatre
 - Theatres are now plugins, run by the background runner.

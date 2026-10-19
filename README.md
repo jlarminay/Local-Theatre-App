@@ -1,7 +1,5 @@
 # Local Theatre
 
-> Formerly **Vic Theatre**. The last Vic-only release is tagged `vic-v1.0.2`.
-
 A personal Android app (Vue + TypeScript + Capacitor) that shows local cinemas' schedules in one
 readable place and sends a notification when a new film is added. Each cinema is a plugin; the
 Vic (Victoria Film Theatre) and Cinecenta are built in.
