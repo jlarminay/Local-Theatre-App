@@ -2,8 +2,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.joshlarminay.victheatre',
-  appName: 'Vic Theatre',
+  appId: 'com.joshlarminay.localtheatre',
+  appName: 'Local Theatre',
   webDir: 'dist',
   backgroundColor: '#121212',
   plugins: {
@@ -14,7 +14,7 @@ const config: CapacitorConfig = {
     },
     // Keep label and interval in sync with src/lib/watch.ts.
     BackgroundRunner: {
-      label: 'com.joshlarminay.victheatre.check',
+      label: 'com.joshlarminay.localtheatre.check',
       src: 'runners/runner.js',
       event: 'checkSchedule',
       repeat: true,

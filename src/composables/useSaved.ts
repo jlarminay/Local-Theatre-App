@@ -15,7 +15,7 @@ export type SavedFilm = {
   lastShowing: string | null;
 };
 
-const SAVED_KEY = 'vic-theatre:saved';
+const SAVED_KEY = 'local-theatre:saved';
 
 function load(): Record<number, SavedFilm> {
   try {

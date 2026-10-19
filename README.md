@@ -1,4 +1,7 @@
-# Vic Theatre
+# Local Theatre
+
+> Formerly **Vic Theatre**. It is being reworked to support several local cinemas through
+> built-in scraper plugins. The last Vic-only release is tagged `vic-v1.0.2`.
 
 A personal Android app (Vue + TypeScript + Capacitor) that shows the Victoria Film Theatre's
 schedule in a readable way and sends a notification when a new film is added.

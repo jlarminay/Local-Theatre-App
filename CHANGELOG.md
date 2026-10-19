@@ -2,6 +2,10 @@
 
 # CHANGELOG
 
+## [Unreleased]
+### Changed
+- Renamed to Local Theatre, with a new app ID (installs alongside Vic Theatre)
+
 ## [1.0.2] - 2026-10-16
 ### Added
 - Info button explaining how the schedule refreshes

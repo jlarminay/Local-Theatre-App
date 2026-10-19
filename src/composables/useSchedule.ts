@@ -21,14 +21,14 @@ export type Film = {
 // then only fetches with no cache, or from Settings → Refresh now.
 const AUTO_REFRESH = true;
 export const AUTO_REFRESH_MIN_MS = 60 * 60_000;
-const LAST_ATTEMPT_KEY = 'vic-theatre:last-fetch-attempt';
+const LAST_ATTEMPT_KEY = 'local-theatre:last-fetch-attempt';
 
 // Films first seen within this window get a "New" badge.
 const NEW_FOR_MS = 7 * 86_400_000;
 // Keep a showing listed until shortly after it starts.
 const GRACE_MINUTES = 30;
 
-const CACHE_KEY = 'vic-theatre:cache';
+const CACHE_KEY = 'local-theatre:cache';
 // Bump when the cached shape changes, so older caches are ignored.
 const CACHE_VERSION = 5;
 

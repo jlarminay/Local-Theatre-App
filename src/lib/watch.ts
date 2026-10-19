@@ -8,10 +8,10 @@ import { recordSeen, type FirstSeen } from './schedule';
 // desktop browser there's no runner, so localStorage stands in for it.
 
 export type { LastCheck };
-export const RUNNER_LABEL = 'com.joshlarminay.victheatre.check';
+export const RUNNER_LABEL = 'com.joshlarminay.localtheatre.check';
 export const CHECK_INTERVAL_MINUTES = 240;
 
-const WEB_SEEN_KEY = 'vic-theatre:first-seen';
+const WEB_SEEN_KEY = 'local-theatre:first-seen';
 const native = Capacitor.isNativePlatform();
 
 function dispatch<T>(event: string, details: Record<string, unknown> = {}): Promise<T> {
@@ -48,7 +48,7 @@ export async function testNotification(titles: string[]): Promise<void> {
   await dispatch('testNotification', { titles });
 }
 
-const WEB_ALERTS_KEY = 'vic-theatre:alerts-enabled';
+const WEB_ALERTS_KEY = 'local-theatre:alerts-enabled';
 
 /** Whether new-film alerts are on; pass `enabled` to change it. */
 export async function alertsEnabled(enabled?: boolean): Promise<boolean> {

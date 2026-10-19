@@ -1,4 +1,4 @@
-package com.joshlarminay.victheatre;
+package com.joshlarminay.localtheatre;
 
 import com.getcapacitor.BridgeActivity;
 

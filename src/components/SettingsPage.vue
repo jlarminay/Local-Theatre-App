@@ -128,7 +128,7 @@ const onAllow = () =>
     // Once blocked, Android stops showing the prompt; only system settings can undo it.
     return granted
       ? 'Notifications allowed.'
-      : 'Still blocked — allow them in Android Settings → Apps → Vic Theatre.';
+      : 'Still blocked — allow them in Android Settings → Apps → Local Theatre.';
   });
 
 const onClear = () =>
