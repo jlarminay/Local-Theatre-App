@@ -89,9 +89,9 @@ const lastRuns = computed(() =>
       </p>
 
       <ul v-if="progress" class="m-0 flex list-none flex-col gap-2 p-0">
-        <li v-for="line in progress.theatres" :key="line.id">
+        <li v-for="line in progress.theatres" :key="line.id" class="min-w-0">
           <button
-            class="w-full rounded-lg border-0 bg-transparent p-1.5 text-left text-muted-2 active:bg-border-1"
+            class="w-full min-w-0 overflow-hidden rounded-lg border-0 bg-transparent p-1.5 text-left text-muted-2 active:bg-border-1"
             :aria-expanded="expanded.has(line.id)"
             @click="toggle(line.id)"
           >

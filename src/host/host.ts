@@ -91,6 +91,8 @@ const KEYS = {
   result: (id: string) => `result:${id}`,
   lastRun: (id: string) => `lastRun:${id}`,
   store: (id: string) => `store:${id}`,
+  /** A user-supplied key from a manifest's `keys`, shared by name. */
+  secret: (name: string) => `key:${name}`,
 };
 
 type SavedResult = { at: number; films: HostFilm[]; showtimes: HostShowtime[] };
@@ -215,6 +217,10 @@ export function createHost(options: { plugins: Plugin[]; kv: Kv; get: Get; timeo
       },
       progress: onStep,
       deadline: started + limitMs,
+      key: (name) =>
+        plugin.manifest.keys?.some((k) => k.name === name)
+          ? (kv.get(KEYS.secret(name)) ?? undefined)
+          : undefined,
     };
 
     let info: RunInfo;
@@ -326,6 +332,25 @@ export function createHost(options: { plugins: Plugin[]; kv: Kv; get: Get; timeo
 
     setLastCheck(check: LastCheck) {
       write(KEYS.lastCheck, check);
+    },
+
+    /** Saves (or with null, removes) a user-supplied plugin key. */
+    setKey(name: string, value: string | null) {
+      if (value?.trim()) kv.set(KEYS.secret(name), value.trim());
+      else kv.remove(KEYS.secret(name));
+    },
+
+    /** "…a1b" for each plugin key that's set: enough to tell it's there, never the key. */
+    keyHints(): Record<string, string> {
+      const names = new Set(
+        [...byId.values()].flatMap(({ manifest }) => (manifest.keys ?? []).map((k) => k.name)),
+      );
+      return Object.fromEntries(
+        [...names].flatMap((name) => {
+          const value = kv.get(KEYS.secret(name));
+          return value ? [[name, `…${value.slice(-3)}`]] : [];
+        }),
+      );
     },
 
     /** Forgets every theatre's results and plugin storage. Keeps first-seen dates and settings. */

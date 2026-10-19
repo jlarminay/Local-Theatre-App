@@ -67,7 +67,14 @@ export function devProxy() {
       };
     }) {
       server.middlewares.use('/proxy', async (req, res) => {
-        const url = new URL(req.url ?? '', 'http://localhost').searchParams.get('url') ?? '';
+        const params = new URL(req.url ?? '', 'http://localhost').searchParams;
+        const url = params.get('url') ?? '';
+        let headers: Record<string, string> = {};
+        try {
+          headers = JSON.parse(params.get('headers') ?? '{}');
+        } catch {
+          // no extra headers
+        }
         const allowed = new Set(findPlugins().flatMap(({ manifest }) => manifest.domains));
         let host = '';
         try {
@@ -81,7 +88,9 @@ export function devProxy() {
           return;
         }
         try {
-          const response = await fetch(url, { headers: { 'user-agent': 'LocalTheatre-dev' } });
+          const response = await fetch(url, {
+            headers: { 'user-agent': 'LocalTheatre-dev', ...headers },
+          });
           res.statusCode = response.status;
           res.setHeader('content-type', response.headers.get('content-type') ?? 'text/plain');
           res.end(await response.text());

@@ -2,6 +2,11 @@
 
 # CHANGELOG
 
+## [2.2.0] - 2026-10-18
+### Added
+- New default theater; SilverCity Victoria (Cineplex). Needs a Cineplex key, added in Settings
+- Theatres can ask for their own keys in Settings, kept only on the device
+
 ## [2.1.0] - 2026-10-18
 ### Added
 - 2 new default theaters; Roxy, Capitol 6

@@ -60,6 +60,21 @@ export function checkManifest(raw: unknown, folder: string): Manifest {
       (typeof m.timeoutSeconds !== 'number' || m.timeoutSeconds < 10 || m.timeoutSeconds > 300)
     )
       problems.push(`"timeoutSeconds" must be a number from 10 to 300`);
+    if (
+      m.keys !== undefined &&
+      (!Array.isArray(m.keys) ||
+        !m.keys.every(
+          (k) =>
+            k &&
+            typeof k === 'object' &&
+            typeof (k as { name?: unknown }).name === 'string' &&
+            ID.test((k as { name: string }).name) &&
+            typeof (k as { label?: unknown }).label === 'string',
+        ))
+    )
+      problems.push(
+        `"keys" must be a list of { "name": "lowercase-id", "label": "…", "help"?: "…" }`,
+      );
     if (m.enabledByDefault !== undefined && typeof m.enabledByDefault !== 'boolean')
       problems.push(`"enabledByDefault" must be true or false`);
   }

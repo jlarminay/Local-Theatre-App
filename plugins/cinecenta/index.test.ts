@@ -41,6 +41,7 @@ function fakeCtx(
     log: (...parts) => void logs.push(parts),
     progress: () => {},
     deadline: Date.now() + 60_000,
+    key: () => undefined,
   };
   return { ctx, requested, logs, stored };
 }

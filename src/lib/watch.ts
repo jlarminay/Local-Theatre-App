@@ -50,8 +50,10 @@ function browserHost(): Promise<Host> {
       return createHost({
         plugins,
         kv,
-        get: async (url) => {
-          const response = await fetch(`/proxy?url=${encodeURIComponent(url)}`);
+        get: async (url, headers) => {
+          const query = new URLSearchParams({ url });
+          if (headers) query.set('headers', JSON.stringify(headers));
+          const response = await fetch(`/proxy?${query}`);
           return { status: response.status, text: await response.text() };
         },
       });
@@ -111,6 +113,18 @@ export async function setEnabledTheatres(ids: string[]): Promise<HostState> {
   return (await browserHost()).setEnabled(ids);
 }
 
+/** Hints ("…a1b") for the plugin keys that are set; pass `name` to save one (`value` null removes it). */
+export async function pluginKeys(
+  name?: string,
+  value?: string | null,
+): Promise<Record<string, string>> {
+  const args = name === undefined ? {} : { name, value: value ?? null };
+  if (native) return dispatch('keys', args);
+  const host = await browserHost();
+  if (name !== undefined) host.setKey(name, value ?? null);
+  return host.keyHints();
+}
+
 /** Forgets every theatre's results and plugin storage (first-seen dates stay). */
 export async function clearTheatreData(): Promise<void> {
   if (native) return dispatch('clearCache');
@@ -123,7 +137,9 @@ export async function checkNow(): Promise<LastCheck> {
 }
 
 /** Shows what a new-film alert looks like, using `films` as the examples. */
-export async function testNotification(films: { title: string; theatre: string }[]): Promise<void> {
+export async function testNotification(
+  films: { title: string; theatre: string; starts?: string[] }[],
+): Promise<void> {
   if (!native) throw new Error('Notifications only work in the app.');
   await dispatch('testNotification', { films });
 }
