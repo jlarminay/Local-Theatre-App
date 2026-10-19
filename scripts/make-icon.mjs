@@ -1,73 +1,43 @@
-// Builds the app icon and header logo from the theatre's footer logo
-// (assets/source/footer-logo.png, from victoriafilmfestival.com): just the
-// two-faces emblem, words dropped, in plain white on #121212.
-// Writes assets/ (for `capacitor-assets generate`), public/logo.png and the
+// Builds the app icon, splash, favicon and notification icon: a placeholder
+// "LT" in solid block letters, white on #121212. Drawn from rectangles, so
+// it doesn't depend on installed fonts. Final branding comes later.
+// Writes assets/ (for `capacitor-assets generate`), public/favicon.svg and the
 // Android notification icon.
 // Usage: npm run icons
 
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import sharp from 'sharp';
 
-const SOURCE = 'assets/source/footer-logo.png';
 const BACKGROUND = '#121212';
-// The emblem occupies the left of the logo; the wordmark starts after this column.
-const EMBLEM_MAX_X = 92;
-const MASTER = 1024;
+await mkdir('public', { recursive: true });
 
-// The source is only ~90px tall, so the emblem's alpha is upscaled smoothly and
-// then thresholded, giving crisp solid edges instead of a blurry enlargement.
-// Returns the emblem as white-on-transparent, MASTER px on its longer side.
-async function whiteEmblem() {
-  const { data, info } = await sharp(SOURCE)
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  let left = Infinity,
-    right = -1,
-    top = Infinity,
-    bottom = -1;
-  for (let y = 0; y < info.height; y++) {
-    for (let x = 0; x < EMBLEM_MAX_X; x++) {
-      if (data[(y * info.width + x) * 4 + 3] < 40) continue;
-      left = Math.min(left, x);
-      right = Math.max(right, x);
-      top = Math.min(top, y);
-      bottom = Math.max(bottom, y);
-    }
-  }
-  const scale = MASTER / Math.max(right - left + 1, bottom - top + 1);
-  const width = Math.round((right - left + 1) * scale);
-  const height = Math.round((bottom - top + 1) * scale);
-  const mask = await sharp(SOURCE)
-    .extract({ left, top, width: right - left + 1, height: bottom - top + 1 })
-    .extractChannel('alpha')
-    .resize(width, height, { kernel: 'lanczos3' })
-    .blur(2)
-    .threshold(128)
-    .toColourspace('b-w')
-    .toBuffer();
-  return sharp({ create: { width, height, channels: 3, background: '#ffffff' } })
-    .joinChannel(mask)
-    .png()
-    .toBuffer();
+// "LT" in a 100×100 box, centred: L spans 12–46, T spans 52–88; strokes 16 wide.
+const LETTERS = [
+  [12, 18, 16, 64],
+  [12, 66, 34, 16],
+  [52, 18, 36, 16],
+  [62, 18, 16, 64],
+];
+
+/** The letters as SVG, filling `fraction` of a `size` square, on `background` (or transparent). */
+function svg(size, fraction, background, radius = 0) {
+  const scale = (size * fraction) / 100;
+  const offset = (size - size * fraction) / 2;
+  const n = (value) => Math.round(value * 100) / 100;
+  const rects = LETTERS.map(
+    ([x, y, w, h]) =>
+      `<rect x="${n(offset + x * scale)}" y="${n(offset + y * scale)}" width="${n(w * scale)}" height="${n(h * scale)}"/>`,
+  ).join('');
+  const bg = background
+    ? `<rect width="${size}" height="${size}" rx="${radius}" fill="${background}"/>`
+    : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${bg}<g fill="#ffffff">${rects}</g></svg>`;
 }
 
-const emblem = await whiteEmblem();
-const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 };
-
-/** White emblem fitted into `fraction` of a `size` square, on `background` (or transparent). */
-async function render(file, size, fraction, background) {
-  const inner = Math.round(size * fraction);
-  const fitted = await sharp(emblem)
-    .resize(inner, inner, { fit: 'contain', background: TRANSPARENT })
-    .toBuffer();
-  await sharp({
-    create: { width: size, height: size, channels: 4, background: background ?? TRANSPARENT },
-  })
-    .composite([{ input: fitted, gravity: 'centre' }])
+const render = (file, size, fraction, background) =>
+  sharp(Buffer.from(svg(size, fraction, background)))
     .png()
     .toFile(file);
-}
 
 await Promise.all([
   render('assets/icon-only.png', 1024, 0.8, BACKGROUND),
@@ -78,15 +48,15 @@ await Promise.all([
     .toFile('assets/icon-background.png'),
   render('assets/splash.png', 2732, 0.22, BACKGROUND),
   render('assets/splash-dark.png', 2732, 0.22, BACKGROUND),
-  render('public/logo.png', 256, 1, null),
+  writeFile('public/favicon.svg', svg(64, 0.8, BACKGROUND, 12) + '\n'),
   // Notification (status bar) icon: Android wants a white shape on transparent,
-  // 24dp at each density. The runner refers to it as "ic_stat_vic".
+  // 24dp at each density. The runner refers to it as "ic_stat_notify".
   ...Object.entries({ mdpi: 24, hdpi: 36, xhdpi: 48, xxhdpi: 72, xxxhdpi: 96 }).map(
     async ([density, size]) => {
       const dir = `android/app/src/main/res/drawable-${density}`;
       await mkdir(dir, { recursive: true });
-      await render(`${dir}/ic_stat_vic.png`, size, 0.92, null);
+      await render(`${dir}/ic_stat_notify.png`, size, 0.92, null);
     },
   ),
 ]);
-console.log('Wrote icon sources to assets/ and public/logo.png');
+console.log('Wrote icon sources to assets/, public/favicon.svg and the notification icon');

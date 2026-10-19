@@ -1,0 +1,14 @@
+{
+  "$schema": "../sdk/manifest.schema.json",
+  "id": "sample",
+  "name": "Sample Cinema",
+  "shortName": "SMP",
+  "color": "#2f9e6b",
+  "version": "1.0.0",
+  "author": "Local Theatre (dev sample)",
+  "updated": "2026-10-18",
+  "apiVersion": 1,
+  "homepage": "https://example.com/",
+  "domains": ["example.com"],
+  "enabledByDefault": true
+}

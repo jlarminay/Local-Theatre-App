@@ -19,6 +19,11 @@ export function formatDateTime(when: number | string): string {
   return dayjs(when).format('ddd, MMM D, h:mm a');
 }
 
+/** e.g. "Oct 18, 2026", from "2026-10-18". */
+export function formatDate(day: string): string {
+  return dayjs(day).format('MMM D, YYYY');
+}
+
 /** Calendar day of a showtime, for grouping, e.g. "2026-10-16". */
 export function dayKey(start: string): string {
   return dayjs(start).format('YYYY-MM-DD');

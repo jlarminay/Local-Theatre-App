@@ -1,0 +1,27 @@
+{
+  // Theatre plugins, and src/host which runs them, run in the background
+  // runner's QuickJS engine, so they're checked without DOM or Node types:
+  // using DOMParser, document or fs fails here (see plugins/sdk/globals.d.ts).
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "lib": ["ES2020"],
+    "types": []
+  },
+  "include": ["plugins/**/*.ts", "src/host/**/*.ts"],
+  "exclude": [
+    "plugins/sdk/discover.ts",
+    "plugins/sdk/virtual.d.ts",
+    "plugins/sdk/node.ts",
+    "plugins/sdk/run.ts",
+    "plugins/sdk/new.ts",
+    "plugins/**/*.test.ts",
+    "src/host/**/*.test.ts"
+  ]
+}

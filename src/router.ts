@@ -18,9 +18,10 @@ export const router = createRouter({
     { path: '/', redirect: '/films' },
     { path: `/:tab(${TABS.join('|')})`, component: TabsPage, props: true, meta: { depth: 0 } },
     {
-      path: '/film/:id(\\d+)',
+      // Keys are "<theatre>:<film>", e.g. /film/vic:385117.
+      path: '/film/:key',
       component: FilmDetail,
-      props: (route) => ({ id: Number(route.params.id) }),
+      props: (route) => ({ filmKey: String(route.params.key) }),
       meta: { depth: 1 },
     },
     { path: '/settings', component: SettingsPage, meta: { depth: 1 } },
@@ -49,8 +50,8 @@ export function onViewLeft() {
   pendingScroll = null;
 }
 
-export function openFilm(id: number) {
-  router.push(`/film/${id}`);
+export function openFilm(key: string) {
+  router.push(`/film/${encodeURIComponent(key)}`);
 }
 
 /** Back to the previous screen, or to Films when this page was opened directly. */

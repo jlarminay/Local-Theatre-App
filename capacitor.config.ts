@@ -12,13 +12,15 @@ const config: CapacitorConfig = {
       style: 'DARK',
       initialViewportFitValueHint: 'cover',
     },
-    // Keep label and interval in sync with src/lib/watch.ts.
+    // Keep label in sync with src/lib/watch.ts. interval is how often Android wakes
+    // the runner (WAKE_MINUTES in src/host/checks.ts); the runner itself skips
+    // wakes until the rate chosen in Settings is due.
     BackgroundRunner: {
       label: 'com.joshlarminay.localtheatre.check',
       src: 'runners/runner.js',
       event: 'checkSchedule',
       repeat: true,
-      interval: 240,
+      interval: 60,
       autoStart: true,
     },
   },

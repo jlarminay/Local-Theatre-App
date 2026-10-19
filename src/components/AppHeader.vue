@@ -3,6 +3,7 @@ import { useNow } from '../composables/useNow';
 import { useSchedule } from '../composables/useSchedule';
 import { timeAgo } from '../lib/format';
 import type { Tab } from '../router';
+import TheatreFilter from './TheatreFilter.vue';
 
 const { updatedAt, loading, error } = useSchedule();
 const now = useNow();
@@ -21,12 +22,13 @@ const tabs: { id: Tab; label: string }[] = [
   >
     <div class="flex items-center justify-between gap-3 pb-2">
       <div class="flex items-center gap-3">
-        <img src="/logo.png" alt="" class="h-11 w-11" />
-        <h1 class="m-0 font-display text-[40px] leading-none tracking-wide -mb-1">The Vic</h1>
+        <h1 class="m-0 -mb-1 font-display text-[32px] leading-none tracking-wide whitespace-nowrap">
+          Local Theatre
+        </h1>
       </div>
       <div class="flex items-center gap-2">
         <!-- Status only; refreshing lives in Settings. -->
-        <p class="m-0 flex items-center gap-1 font-mono text-[11px] text-muted-1">
+        <p class="m-0 flex items-center gap-1 font-mono text-[11px] whitespace-nowrap text-muted-1">
           <span v-if="loading" class="inline-block animate-spin" aria-hidden="true">↻</span>
           {{ loading ? 'Updating…' : updatedAt ? `Updated ${timeAgo(updatedAt, now)}` : '' }}
         </p>
@@ -52,7 +54,7 @@ const tabs: { id: Tab; label: string }[] = [
         </RouterLink>
       </div>
     </div>
-    <nav class="flex gap-5">
+    <nav class="flex items-start gap-5">
       <!-- replace: switching tabs shouldn't stack up history for the Back button. -->
       <RouterLink
         v-for="t in tabs"
@@ -64,9 +66,11 @@ const tabs: { id: Tab; label: string }[] = [
       >
         {{ t.label }}
       </RouterLink>
+      <!-- Saved shows every theatre's saves, so the filter is only for the lineup tabs. -->
+      <TheatreFilter v-if="tab !== 'saved'" class="ml-auto" />
     </nav>
   </header>
-  <p v-if="error" class="mt-3 rounded-lg bg-error/10 p-3 text-sm text-error">
+  <p v-if="error" class="mt-3 rounded-lg bg-error/10 p-3 text-sm whitespace-pre-line text-error">
     {{ error }}
   </p>
 </template>

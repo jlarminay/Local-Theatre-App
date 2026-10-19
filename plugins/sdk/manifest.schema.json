@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Local Theatre plugin manifest",
+  "description": "Keep in sync with Manifest in plugins/sdk/types.ts and checkManifest in plugins/sdk/manifest.ts.",
+  "type": "object",
+  "required": ["id", "name", "shortName", "color", "version", "apiVersion", "homepage", "domains"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Must match the folder name (without the leading \"_\" of a dev-only folder). Prefixes the app-wide film keys, e.g. \"vic:385117\"."
+    },
+    "name": { "type": "string", "minLength": 1, "description": "Full name, e.g. \"The Vic\"." },
+    "shortName": { "type": "string", "minLength": 1, "description": "Tag text, e.g. \"VIC\"." },
+    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Tag colour." },
+    "version": { "type": "string", "minLength": 1 },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Who wrote the plugin, shown in the theatre's info in Settings."
+    },
+    "updated": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "When the plugin last changed, e.g. \"2026-10-18\"."
+    },
+    "apiVersion": {
+      "const": 1,
+      "description": "Plugin contract version (API_VERSION in types.ts)."
+    },
+    "homepage": {
+      "type": "string",
+      "pattern": "^https?://",
+      "description": "Linked from Settings."
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^[a-zA-Z0-9.-]+$" },
+      "description": "Hosts ctx.http may fetch, e.g. [\"www.example.com\"]."
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Who runs the theatre, if not obvious from its name; named in the About disclaimer."
+    },
+    "enabledByDefault": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether it's switched on for a fresh install."
+    }
+  },
+  "additionalProperties": false
+}

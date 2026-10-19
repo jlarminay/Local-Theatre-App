@@ -6,38 +6,54 @@ import { useSchedule } from '../composables/useSchedule';
 import { formatDay, formatTime, LOW_SEATS } from '../lib/format';
 import { goBack } from '../router';
 import StarIcon from './StarIcon.vue';
+import TheatreTag from './TheatreTag.vue';
 
-const { films } = useSchedule();
-const props = defineProps<{ id: number }>();
-const { saved, isSaved, toggleSaved, unsave } = useSaved();
+const { filmByKey, theatreOf, multiTheatre } = useSchedule();
+const props = defineProps<{ filmKey: string }>();
+const { savedByKey, isSaved, toggleSaved, unsave } = useSaved();
 
-// A saved film that has left the schedule still opens, from its saved snapshot.
-const passedSave = computed(() =>
-  films.value.some((f) => f.id === props.id) ? undefined : saved.value[props.id],
-);
+// Any of a combined film's keys opens it. A saved film that has left the
+// schedule still opens, from its saved snapshot.
+const current = computed(() => filmByKey.value.get(props.filmKey));
+const passedSave = computed(() => (current.value ? undefined : savedByKey(props.filmKey)));
 const film = computed(
-  () =>
-    films.value.find((f) => f.id === props.id) ??
-    (passedSave.value ? savedAsFilm(passedSave.value) : null),
+  () => current.value ?? (passedSave.value ? savedAsFilm(passedSave.value) : null),
 );
+const theatreName = (id: string) => theatreOf(id)?.name ?? 'the theatre';
+/** Tag each showing with its theatre when the film is on at more than one. */
+const severalTheatres = computed(() => (film.value?.theatres.length ?? 0) > 1);
+
+const tall = computed(() => (film.value?.imageAspect ?? 1) < 0.9);
 
 function onStar() {
   if (!film.value) return;
-  if (isSaved(film.value.id)) unsave(film.value.id);
+  if (isSaved(film.value)) unsave(film.value);
   else toggleSaved(film.value);
 }
 </script>
 
 <template>
   <div class="-mx-4 pb-10">
-    <div class="relative">
-      <img
-        v-if="film?.details?.image"
-        :src="film.details.image"
-        :alt="film.title"
-        class="fade-img aspect-video w-full bg-imgbg object-cover"
-        @load="(event) => (event.target as HTMLElement).classList.add('loaded')"
-      />
+    <!-- Wide and square images fill the 16:9 banner (squares lose a little top and
+         bottom); tall posters would lose most of themselves, so they're shown
+         whole over a blurred copy instead. -->
+    <div class="relative overflow-hidden bg-imgbg">
+      <template v-if="film?.image">
+        <img
+          v-if="tall"
+          :src="film.image"
+          alt=""
+          aria-hidden="true"
+          class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-xl"
+        />
+        <img
+          :src="film.image"
+          :alt="film.title"
+          class="fade-img relative aspect-video w-full"
+          :class="tall ? 'object-contain' : 'object-cover'"
+          @load="(event) => (event.target as HTMLElement).classList.add('loaded')"
+        />
+      </template>
       <div v-else class="aspect-video w-full bg-card" />
     </div>
 
@@ -55,34 +71,39 @@ function onStar() {
       <button
         v-if="film"
         class="pointer-events-auto flex items-center gap-1.5 rounded-full border-0 bg-black/60 py-2 pr-4 pl-3 backdrop-blur transition-colors duration-200"
-        :class="isSaved(film.id) ? 'text-accent' : 'text-white'"
-        :aria-pressed="isSaved(film.id)"
+        :class="isSaved(film) ? 'text-accent' : 'text-white'"
+        :aria-pressed="isSaved(film)"
         @click="onStar"
       >
-        <span class="h-5 w-5"><StarIcon :filled="isSaved(film.id)" /></span>
-        <span class="text-white">{{ isSaved(film.id) ? 'Saved' : 'Save' }}</span>
+        <span class="h-5 w-5"><StarIcon :filled="isSaved(film)" /></span>
+        <span class="text-white">{{ isSaved(film) ? 'Saved' : 'Save' }}</span>
       </button>
     </div>
 
     <div v-if="film" class="px-4 pt-4">
-      <h2 class="mb-1 text-[26px] leading-tight font-bold">{{ film.title }}</h2>
-      <p v-if="film.details?.meta.length" class="mb-3 font-mono text-[12px] text-muted-1">
-        {{ film.details.meta.join(' · ') }}
+      <p
+        v-if="multiTheatre"
+        class="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-2"
+      >
+        <span v-for="theatre in film.theatres" :key="theatre" class="flex items-center gap-2">
+          <TheatreTag :theatre="theatre" />
+          {{ theatreName(theatre) }}
+        </span>
       </p>
-      <div v-if="film.details?.flags.length" class="mb-4 flex flex-wrap gap-2">
+      <h2 class="mb-1 text-[26px] leading-tight font-bold">{{ film.title }}</h2>
+      <p v-if="film.meta?.length" class="mb-3 font-mono text-[12px] text-muted-1">
+        {{ film.meta.join(' · ') }}
+      </p>
+      <div v-if="film.flags?.length" class="mb-4 flex flex-wrap gap-2">
         <span
-          v-for="flag in film.details?.flags"
+          v-for="flag in film.flags"
           :key="flag"
           class="rounded bg-accent/15 px-2 py-0.5 text-[12px] font-medium text-accent"
         >
           {{ flag }}
         </span>
       </div>
-      <p
-        v-for="(paragraph, i) in film.details?.synopsis"
-        :key="i"
-        class="leading-relaxed text-muted-2"
-      >
+      <p v-for="(paragraph, i) in film.synopsis" :key="i" class="leading-relaxed text-muted-2">
         {{ paragraph }}
       </p>
 
@@ -103,9 +124,10 @@ function onStar() {
       >
         <li
           v-for="showtime in film.showtimes"
-          :key="showtime.start"
+          :key="showtime.start + showtime.filmKey"
           class="flex items-center gap-3 px-3.5 py-3"
         >
+          <TheatreTag v-if="severalTheatres" :theatre="showtime.theatre" />
           <span class="flex-1">
             <span class="font-medium">{{ formatDay(showtime.start) }}</span>
             <span class="ml-2 font-mono text-[13px] text-muted-2">{{
@@ -115,12 +137,15 @@ function onStar() {
           <span v-if="showtime.soldOut" class="font-mono text-[11px] text-error">Sold out</span>
           <template v-else>
             <span
+              v-if="showtime.seatsLeft !== undefined"
               class="font-mono text-[11px]"
               :class="showtime.seatsLeft <= LOW_SEATS ? 'text-error' : 'text-muted-1'"
             >
               {{ showtime.seatsLeft }} seats
             </span>
+            <span v-if="showtime.note" class="text-[13px] text-muted-2">{{ showtime.note }}</span>
             <a
+              v-if="showtime.bookUrl"
               :href="showtime.bookUrl"
               target="_blank"
               rel="noopener"
@@ -133,13 +158,14 @@ function onStar() {
       </ul>
 
       <a
-        v-if="film.details?.pageUrl"
-        :href="film.details.pageUrl"
+        v-for="link in film.links"
+        :key="link.theatre"
+        :href="link.url"
         target="_blank"
         rel="noopener"
-        class="mt-4 inline-block text-[13px] text-accent"
+        class="mt-4 block text-[13px] text-accent"
       >
-        View on the Vic's site ↗
+        View on {{ theatreName(link.theatre) }}'s site ↗
       </a>
     </div>
     <p v-else class="px-4 py-16 text-center text-muted-1">This film is no longer scheduled.</p>

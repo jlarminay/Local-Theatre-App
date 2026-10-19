@@ -1,0 +1,24 @@
+{
+  // Node-side code: the plugin runner, scaffold, build check, tests and Vite configs.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "lib": ["ES2024"],
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "plugins/sdk/node.ts",
+    "plugins/sdk/run.ts",
+    "plugins/sdk/new.ts",
+    "plugins/**/*.test.ts",
+    "src/host/**/*.test.ts",
+    "vite.config.ts",
+    "vite.runner.config.ts"
+  ]
+}

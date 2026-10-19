@@ -16,24 +16,30 @@ schedule in a readable way and sends a notification when a new film is added.
 > "as is", without warranty of any kind. Use it at your own risk; the author is not liable for
 > any damages or issues arising from its use. All rights reserved.
 
-## Where the data comes from
+## How it works
 
-- **Showtimes**: the [monthly calendar page](https://www.victoriafilmfestival.com/festival/victoria-film-theatre-monthly-calendar/)
-  embeds its events as JSON (`var localObj = '…'`). `src/lib/schedule.ts` extracts it.
-- **Posters, synopsis, rating, price**: WooCommerce's public Store API
-  (`/wp-json/wc/store/v1/products?include=<ids>`), one request for all films.
-
-The site sends no CORS headers, so the app uses `CapacitorHttp`; `npm run dev` goes through
-Vite's `/vic` proxy instead.
+- **Theatre plugins** (`plugins/<id>/`, see below) fetch and parse each theatre's site. The Vic's
+  showtimes come from its [monthly calendar page](https://www.victoriafilmfestival.com/festival/victoria-film-theatre-monthly-calendar/),
+  which embeds its events as JSON, and its posters and synopses from WooCommerce's public Store
+  API, in one request for all films.
+- **The background runner** (`runner/runner.ts`, Capacitor's headless QuickJS engine) is the only
+  place plugins run on the phone. The plugin host (`src/host/host.ts`) runs the enabled ones in
+  order, keeps each theatre's last good result if a run fails, and stores everything in the
+  runner's key-value store.
+- **The app** asks the runner for data with dispatched events (`src/lib/watch.ts`): `refresh` when
+  opened (at most hourly) or from Settings, and `state` otherwise. It caches the last answer to
+  show instantly on launch.
+- **In a desktop browser** (`npm run dev`) there's no runner, so the same host runs in the page.
+  Sites are fetched through the dev server's `/proxy`, since they send no CORS headers.
 
 ## Background checks
 
-`runner/runner.ts` runs in Capacitor Background Runner's headless JS engine roughly every
-4 hours (`capacitor.config.ts`). It reuses the parser from `src/lib/schedule.ts`, keeps a
-"first seen" map of film ids in its key-value store, and notifies when an unseen film appears.
-The first check only records a baseline. Opening the app also marks the current films as seen.
+Roughly every 4 hours (`capacitor.config.ts`) the runner runs the plugins in background mode
+(no detail requests), keeps a "first seen" map of film keys, and notifies when an unseen film
+appears. A theatre's first check only records a baseline. Films found by a refresh in the app
+are recorded as seen without an alert.
 
-Android may delay runs (Doze, battery optimisation). The footer's **Check now** and
+Android may delay runs (Doze, battery optimisation). Settings' **Force check now** and
 **Test notification** buttons trigger the runner immediately for testing.
 
 ## Commands
@@ -43,4 +49,30 @@ npm run dev       # browser at http://localhost:5173 (no background runner / not
 npm run android   # build web + runner, sync, install and launch on a connected phone
 npm run sync      # build + cap sync only (then open/run from Android Studio)
 npm run icons     # regenerate the launcher icon from scripts/make-icon.mjs
+npm test          # plugin tests (saved fixtures, no network)
+npm run plugin    # list theatre plugins; `npm run plugin vic` runs one against the live site
 ```
+
+## Theatre plugins
+
+Each theatre is a folder in `plugins/`:
+
+```text
+plugins/<id>/
+├── manifest.json   # name, tag text and colour, domains it may fetch, enabledByDefault
+└── index.ts        # export default async function main(ctx) → { films, showtimes }
+```
+
+Adding a folder is all it takes: the build lists every folder in a generated module
+(`theatrePlugins()` in `plugins/sdk/node.ts`, read by `plugins/sdk/discover.ts`), and fails with a
+clear message if one is broken. `npm run plugin:new <id>` scaffolds one. The contract is in
+`plugins/sdk/types.ts`.
+
+A folder whose name starts with `_` is **dev-only**: it's included in `npm run dev` and never in a
+build. `plugins/_sample/` is a made-up theatre with no network access, covering what the Vic doesn't
+(wide and tall images, no image, no seat counts, notes instead of ticket links) for working on the
+multi-theatre UI. Turn theatres on and off in Settings → Theatres.
+
+Plugins run in the background runner's QuickJS engine, so they can't use the DOM or Node APIs
+(`tsconfig.plugins.json` enforces this). Fetch with `ctx.http` and parse HTML with
+`plugins/sdk/html.ts`. Node isn't QuickJS, so test on the phone before relying on a plugin.

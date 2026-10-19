@@ -10,8 +10,8 @@
   --color-ink: #ececec;
   --color-paper: #121212;
   --color-card: #1c1c1c;
-  /* The magenta from the theatre's logo. */
-  --color-accent: #e6177f;
+  /* Violet, so it doesn't clash with theatres' own tag colours (the Vic's is magenta). */
+  --color-accent: #8b5cf6;
   --color-error: #ff6b5e;
   --color-live: #4cc38a;
 

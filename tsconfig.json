@@ -8,9 +8,21 @@
     "jsx": "preserve",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "noEmit": true,
+    // Plugins import with .ts extensions so Node can run them directly (npm test, npm run plugin).
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "runner/**/*.ts"]
+  // Plugin code is checked without DOM types by tsconfig.plugins.json; Node-side
+  // code by tsconfig.node.json.
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "runner/**/*.ts",
+    "plugins/sdk/discover.ts",
+    "plugins/sdk/virtual.d.ts"
+  ],
+  "exclude": ["src/**/*.test.ts"]
 }

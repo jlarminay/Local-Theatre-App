@@ -8,12 +8,12 @@ import changelogMarkdown from '../../CHANGELOG.md?raw';
 import { useNow } from '../composables/useNow';
 import { useSaved } from '../composables/useSaved';
 import { AUTO_REFRESH_MIN_MS, useSchedule } from '../composables/useSchedule';
-import { formatDateTime, timeAgo } from '../lib/format';
-import { CALENDAR_URL, SITE } from '../lib/schedule';
+import { CHECK_RATES, checkRateLabel, DEFAULT_CHECK_RATE, type CheckRate } from '../host/checks';
+import { formatDate, formatDateTime, timeAgo } from '../lib/format';
 import {
   alertsEnabled,
-  CHECK_INTERVAL_MINUTES,
   checkNow,
+  checkRate,
   ensureNotificationPermission,
   notificationPermission,
   testNotification,
@@ -22,8 +22,23 @@ import {
 import { goBack } from '../router';
 import BaseModal from './BaseModal.vue';
 import InfoButton from './InfoButton.vue';
+import TheatreTag from './TheatreTag.vue';
+import ToggleSwitch from './ToggleSwitch.vue';
 
-const { films, upcoming, updatedAt, lastCheck, loading, refresh, clearCache } = useSchedule();
+const {
+  films,
+  upcoming,
+  theatres,
+  updatedAt,
+  lastCheck,
+  loading,
+  refresh,
+  syncState,
+  clearCache,
+  setTheatreEnabled,
+  combineFilms,
+  setCombineFilms,
+} = useSchedule();
 const { saved } = useSaved();
 
 const native = Capacitor.isNativePlatform();
@@ -72,11 +87,65 @@ async function toggleAlerts() {
   }
 }
 
+// How often the background check runs. Saved as soon as it's picked.
+const rate = ref<CheckRate>(DEFAULT_CHECK_RATE);
+onMounted(async () => {
+  try {
+    rate.value = await checkRate();
+  } catch {
+    // runner unavailable — show the default
+  }
+});
+
+async function onRateChange(event: Event) {
+  const previous = rate.value;
+  const next = Number((event.target as HTMLSelectElement).value) as CheckRate;
+  rate.value = next;
+  try {
+    rate.value = await checkRate(next);
+  } catch (err) {
+    rate.value = previous;
+    message.value = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/** One line under a theatre's name: what it last returned, or why it failed. */
+function theatreStatus(theatre: (typeof theatres.value)[number]) {
+  const run = theatre.lastRun;
+  if (run && !run.ok) return { error: true, text: run.error ?? 'Failed' };
+  if (!theatre.updatedAt) return { error: false, text: theatre.enabled ? 'Not loaded yet' : 'Off' };
+  return {
+    error: false,
+    text: `${theatre.films.length} films · updated ${timeAgo(theatre.updatedAt, now.value)}`,
+  };
+}
+
+const onToggleTheatre = (id: string, on: boolean) =>
+  run(async () => {
+    await setTheatreEnabled(id, on);
+    return '';
+  });
+
 // Modals are a query param (?info=…), so Android's Back closes them.
 const route = useRoute();
 const router = useRouter();
-type Modal = 'schedule' | 'alerts' | 'changelog';
+/** 'schedule', 'alerts', 'changelog', or 'theatre:<id>' for a theatre's info. */
+type Modal = 'schedule' | 'alerts' | 'changelog' | `theatre:${string}`;
 const openModal = computed(() => route.query.info as Modal | undefined);
+/** "victoriafilmfestival.com" from a homepage URL. */
+const siteName = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+};
+
+/** The theatre whose info is open, if any. */
+const infoTheatre = computed(() => {
+  const id = openModal.value?.startsWith('theatre:') && openModal.value.slice('theatre:'.length);
+  return id ? (theatres.value.find((t) => t.manifest.id === id) ?? null) : null;
+});
 let openedHere = false;
 function openInfo(modal: Modal) {
   openedHere = true;
@@ -106,19 +175,19 @@ async function run(action: () => Promise<string>) {
 
 const onCheck = () =>
   run(async () => {
-    lastCheck.value = await checkNow();
-    return lastCheck.value.newTitles.length
-      ? `New: ${lastCheck.value.newTitles.join(', ')}`
-      : 'No new films.';
+    const check = await checkNow();
+    // The check also refreshed the theatres' results.
+    await syncState();
+    return check.newTitles.length ? `New: ${check.newTitles.join(', ')}` : 'No new films.';
   });
 
 const onTest = () =>
   run(async () => {
     // Any current film makes a realistic example.
-    const example =
-      films.value[Math.floor(Math.random() * films.value.length)]?.title ?? 'A new film';
-    await testNotification([example]);
-    return `Sent a sample alert for "${example}" — check your notifications.`;
+    const film = films.value[Math.floor(Math.random() * films.value.length)];
+    const example = film ? { title: film.title, theatre: film.theatre } : null;
+    await testNotification(example ? [example] : []);
+    return `Sent a sample alert for "${example?.title ?? 'A new film'}" — check your notifications.`;
   });
 
 const onAllow = () =>
@@ -153,6 +222,60 @@ const onClear = () =>
     </header>
 
     <div class="flex flex-col gap-6 px-4 pt-5 pb-4">
+      <section>
+        <h2 class="mb-2 font-display text-[22px] leading-none tracking-wide text-accent">
+          Theatres
+        </h2>
+        <dl class="settings-list">
+          <div v-for="theatre in theatres" :key="theatre.manifest.id" class="items-center">
+            <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+              <span class="flex items-center gap-2 text-[14px]">
+                <TheatreTag :theatre="theatre.manifest.id" always />
+                {{ theatre.manifest.name }}
+              </span>
+              <span
+                class="text-[12px]"
+                :class="theatreStatus(theatre).error ? 'text-error' : 'text-muted-1'"
+              >
+                {{ theatreStatus(theatre).text }}
+              </span>
+            </dt>
+            <dd class="flex items-center gap-2">
+              <InfoButton
+                :label="`About ${theatre.manifest.name}`"
+                @click="openInfo(`theatre:${theatre.manifest.id}`)"
+              />
+              <ToggleSwitch
+                :on="theatre.enabled"
+                :label="theatre.manifest.name"
+                :disabled="loading || busy"
+                @toggle="onToggleTheatre(theatre.manifest.id, !theatre.enabled)"
+              />
+            </dd>
+          </div>
+        </dl>
+        <!-- A wrapper carries the gap: .settings-list's own margin: 0 overrides mt-*. -->
+        <div v-if="theatres.length > 1" class="mt-5">
+          <dl class="settings-list">
+            <div class="items-center">
+              <dt class="flex w-auto! flex-1 flex-col gap-0.5 text-ink!">
+                <span class="text-[14px]">Combine films</span>
+                <span class="text-[12px] text-muted-1">
+                  Show a film on at several theatres once, with every theatre's showtimes
+                </span>
+              </dt>
+              <dd>
+                <ToggleSwitch
+                  :on="combineFilms"
+                  label="Combine films on at several theatres"
+                  @toggle="setCombineFilms(!combineFilms)"
+                />
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
       <section>
         <h2
           class="mb-2 flex items-center gap-2 font-display text-[22px] leading-none tracking-wide text-accent"
@@ -200,24 +323,33 @@ const onClear = () =>
             <dt>Alerts</dt>
             <dd class="flex flex-1 items-center justify-between gap-3">
               {{ alerts ? 'On' : 'Off' }}
-              <button
-                role="switch"
-                :aria-checked="alerts"
-                aria-label="New film alerts"
-                class="relative h-6 w-11 shrink-0 rounded-full border-0 p-0 transition-colors duration-200"
-                :class="alerts ? 'bg-accent' : 'bg-border-2'"
-                @click="toggleAlerts"
-              >
-                <span
-                  class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
-                  :class="alerts && 'translate-x-5'"
-                />
-              </button>
+              <ToggleSwitch :on="alerts" label="New film alerts" @toggle="toggleAlerts" />
             </dd>
           </div>
-          <div>
-            <dt>Background check</dt>
-            <dd>About every {{ CHECK_INTERVAL_MINUTES / 60 }} hours</dd>
+          <div class="items-center">
+            <dt><label for="check-rate">Background check</label></dt>
+            <dd class="relative">
+              <select
+                id="check-rate"
+                :value="rate"
+                class="appearance-none rounded-lg border border-border-2 bg-paper py-1.5 pr-8 pl-3 text-[13px] text-ink"
+                @change="onRateChange"
+              >
+                <option v-for="option in CHECK_RATES" :key="option" :value="option">
+                  {{ checkRateLabel(option) }}
+                </option>
+              </select>
+              <svg
+                viewBox="0 0 24 24"
+                class="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-muted-1"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </dd>
           </div>
           <div>
             <dt>Last check</dt>
@@ -279,30 +411,24 @@ const onClear = () =>
               </button>
             </dd>
           </div>
-          <div>
-            <dt>Data from</dt>
-            <dd>
-              <a :href="CALENDAR_URL" target="_blank" rel="noopener" class="text-accent"
-                >The Vic's calendar ↗</a
-              >
-            </dd>
-          </div>
-          <div>
-            <dt>Website</dt>
-            <dd>
-              <a :href="SITE" target="_blank" rel="noopener" class="text-accent"
-                >victoriafilmfestival.com ↗</a
-              >
-            </dd>
-          </div>
         </dl>
-        <p class="mt-4 mb-0 text-[11px] leading-relaxed text-muted-1">
-          This is an unofficial, personal project made for fun. It isn't affiliated with, endorsed
-          by, or connected to the Vic Theatre or the Victoria Film Festival. All listings, images,
-          logos and trademarks belong to the Victoria Film Festival and the respective film studios,
-          distributors and rights holders. Showtimes and seat counts are read from their public
-          website and may be out of date. Always check the official site before buying tickets.
-        </p>
+        <div class="mt-4 text-[11px] leading-relaxed text-muted-1">
+          <p class="m-0">
+            This is an unofficial, personal project made for fun. It isn't affiliated with, endorsed
+            by, or connected to any of the theatres it lists:
+          </p>
+          <ul class="my-1.5 list-disc pl-5">
+            <li v-for="{ manifest } in theatres" :key="manifest.id">
+              {{ manifest.name }}<template v-if="manifest.owner"> — {{ manifest.owner }}</template>
+            </li>
+          </ul>
+          <p class="m-0">
+            All listings, images, logos and trademarks belong to the theatres and the respective
+            film studios, distributors and rights holders. Showtimes and seat counts are read from
+            their public websites and may be out of date. Always check the official site before
+            buying tickets.
+          </p>
+        </div>
       </section>
     </div>
     <BaseModal :open="openModal === 'schedule'" title="How refreshing works" @close="closeInfo">
@@ -312,8 +438,8 @@ const onClear = () =>
           without a connection.
         </li>
         <li>
-          Opening the app updates that copy from the Vic's site — at most {{ autoRefreshLimit }}.
-          Opening it again sooner just shows the copy you already have.
+          Opening the app updates that copy from the theatres' sites — at most
+          {{ autoRefreshLimit }}. Opening it again sooner just shows the copy you already have.
         </li>
         <li>
           <strong class="text-ink">Refresh now</strong> always updates straight away, and restarts
@@ -334,9 +460,10 @@ const onClear = () =>
     <BaseModal :open="openModal === 'alerts'" title="How alerts work" @close="closeInfo">
       <ul class="m-0 flex list-none flex-col gap-2.5 p-0 text-[13px] leading-relaxed text-muted-2">
         <li>
-          About every {{ CHECK_INTERVAL_MINUTES / 60 }} hours, the app checks the Vic's calendar in
-          the background — even when it's closed — and notifies you when a film appears that you
-          haven't seen before.
+          The app checks each theatre's listings in the background — even when it's closed — and
+          notifies you when a film appears that you haven't seen before. How often is set by
+          <strong class="text-ink">Background check</strong>: every hour up to once a day, or never
+          (Force check now still works).
         </li>
         <li>
           Opening the app counts as seeing the current lineup, so you're only alerted about films
@@ -352,6 +479,63 @@ const onClear = () =>
         </li>
       </ul>
       <template #close>Got it</template>
+    </BaseModal>
+
+    <BaseModal
+      :open="Boolean(infoTheatre)"
+      :title="infoTheatre?.manifest.name ?? ''"
+      @close="closeInfo"
+    >
+      <template v-if="infoTheatre">
+        <dl class="theatre-info">
+          <div>
+            <dt>Tag</dt>
+            <dd><TheatreTag :theatre="infoTheatre.manifest.id" always /></dd>
+          </div>
+          <div v-if="infoTheatre.manifest.owner">
+            <dt>Run by</dt>
+            <dd>{{ infoTheatre.manifest.owner }}</dd>
+          </div>
+          <div>
+            <dt>Data from</dt>
+            <dd>
+              <a
+                :href="infoTheatre.manifest.homepage"
+                target="_blank"
+                rel="noopener"
+                class="text-accent"
+                >{{ siteName(infoTheatre.manifest.homepage) }} ↗</a
+              >
+            </dd>
+          </div>
+          <div>
+            <dt>Plugin by</dt>
+            <dd>{{ infoTheatre.manifest.author ?? 'Unknown' }}</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd>
+              {{ infoTheatre.manifest.version }}
+              <template v-if="infoTheatre.manifest.updated">
+                · {{ formatDate(infoTheatre.manifest.updated) }}</template
+              >
+            </dd>
+          </div>
+          <div>
+            <dt>Listed</dt>
+            <dd>
+              {{ infoTheatre.films.length }} films · {{ infoTheatre.showtimes.length }} showings
+            </dd>
+          </div>
+        </dl>
+        <details v-if="infoTheatre.lastRun?.log.length" class="mt-3 text-[12px] text-muted-2">
+          <summary class="cursor-pointer text-muted-1">Log from the last run</summary>
+          <pre
+            class="mt-2 max-h-48 overflow-auto rounded-lg bg-paper p-2.5 font-mono text-[11px] whitespace-pre-wrap"
+            >{{ infoTheatre.lastRun.log.join('\n') }}</pre>
+        </details>
+      </template>
+      <template #close>Close</template>
     </BaseModal>
 
     <BaseModal :open="openModal === 'changelog'" title="Changelog" @close="closeInfo">
@@ -387,6 +571,28 @@ const onClear = () =>
   margin: 0;
   min-width: 0;
   font-size: 13px;
+}
+.theatre-info {
+  margin: 0;
+  font-size: 13px;
+}
+.theatre-info > div {
+  display: flex;
+  gap: 1rem;
+  padding: 0.45rem 0;
+}
+.theatre-info > div + div {
+  border-top: 1px solid var(--color-border-1);
+}
+.theatre-info dt {
+  flex-shrink: 0;
+  width: 5.5rem;
+  color: var(--color-muted-1);
+}
+.theatre-info dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--color-ink);
 }
 .settings-button {
   border: 1px solid var(--color-border-2);
